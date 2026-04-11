@@ -1,15 +1,15 @@
+import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
   Alert,
   KeyboardAvoidingView,
   Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
 import { createIdentity } from '../core/auth/identityService';
 import { useAppStore } from '../store/useAppStore';
 
@@ -44,6 +44,7 @@ export default function SetupScreen() {
       setAuthenticated(true);
       router.replace('/(tabs)');
     } catch (error: any) {
+      console.log('error', error);
       Alert.alert('Error', error.message);
     } finally {
       setLoading(false);

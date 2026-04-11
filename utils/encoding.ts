@@ -7,6 +7,11 @@
  * Encode a string to a UTF-8 byte array
  */
 export function stringToBytes(str: string): number[] {
+  // Use native TextEncoder on web for performance, manual encoding on native
+  if (typeof TextEncoder !== 'undefined') {
+    return Array.from(new TextEncoder().encode(str));
+  }
+
   const bytes: number[] = [];
   let i = 0;
   let charCode: number;
@@ -46,6 +51,11 @@ export function stringToBytes(str: string): number[] {
  * Decode a UTF-8 byte array to a string
  */
 export function bytesToString(bytes: number[]): string {
+  // Use native TextDecoder on web for performance
+  if (typeof TextDecoder !== 'undefined') {
+    return new TextDecoder().decode(new Uint8Array(bytes));
+  }
+
   let result = '';
   let i = 0;
 

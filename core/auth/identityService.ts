@@ -1,4 +1,4 @@
-import * as SecureStore from 'expo-secure-store';
+import { secureStorage } from '@/utils/secureStorage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
 
@@ -41,8 +41,8 @@ export async function createIdentity(password: string): Promise<{ identity: Iden
   };
 
   // Store identity securely
-  await SecureStore.setItemAsync(IDENTITY_KEY, JSON.stringify(identity));
-  await SecureStore.deleteItemAsync(ATTEMPT_COUNT_KEY); // Reset attempts
+  await secureStorage.setItem(IDENTITY_KEY, JSON.stringify(identity));
+  await secureStorage.deleteItem(ATTEMPT_COUNT_KEY); // Reset attempts
 
   return { identity, masterKey: encryptionKey };
 }
@@ -51,7 +51,7 @@ export async function createIdentity(password: string): Promise<{ identity: Iden
  * Get stored identity
  */
 export async function getIdentity(): Promise<Identity | null> {
-  const stored = await SecureStore.getItemAsync(IDENTITY_KEY);
+  const stored = await secureStorage.getItem(IDENTITY_KEY);
   if (!stored) return null;
   return JSON.parse(stored);
 }
@@ -77,7 +77,7 @@ export async function unlockIdentity(password: string): Promise<SecureKey | null
 
     if (decrypted) {
       // Success — reset attempt count
-      await SecureStore.deleteItemAsync(ATTEMPT_COUNT_KEY);
+      await secureStorage.deleteItem(ATTEMPT_COUNT_KEY);
       return key;
     }
   } catch {
@@ -109,7 +109,7 @@ export async function getDecryptedPrivateKey(password: string): Promise<number[]
  * Check if identity exists
  */
 export async function hasIdentity(): Promise<boolean> {
-  const stored = await SecureStore.getItemAsync(IDENTITY_KEY);
+  const stored = await secureStorage.getItem(IDENTITY_KEY);
   return stored !== null;
 }
 
@@ -118,8 +118,8 @@ export async function hasIdentity(): Promise<boolean> {
  */
 export async function clearIdentity(): Promise<void> {
   // Clear SecureStore
-  await SecureStore.deleteItemAsync(IDENTITY_KEY);
-  await SecureStore.deleteItemAsync(ATTEMPT_COUNT_KEY);
+  await secureStorage.deleteItem(IDENTITY_KEY);
+  await secureStorage.deleteItem(ATTEMPT_COUNT_KEY);
   // Clear AsyncStorage (vaults & entries)
   await AsyncStorage.multiRemove([VAULTS_KEY, ENTRIES_KEY]);
 }
@@ -153,7 +153,7 @@ export async function changePassword(
     encryptedPrivateKey,
   };
 
-  await SecureStore.setItemAsync(IDENTITY_KEY, JSON.stringify(updatedIdentity));
+  await secureStorage.setItem(IDENTITY_KEY, JSON.stringify(updatedIdentity));
   oldKey.destroy();
 
   return newKey;
@@ -162,7 +162,7 @@ export async function changePassword(
 // --- Rate limiting helpers ---
 
 async function checkLockout(): Promise<boolean> {
-  const attemptData = await SecureStore.getItemAsync(ATTEMPT_COUNT_KEY);
+  const attemptData = await secureStorage.getItem(ATTEMPT_COUNT_KEY);
   if (!attemptData) return false;
 
   const { count, timestamp } = JSON.parse(attemptData);
@@ -173,24 +173,24 @@ async function checkLockout(): Promise<boolean> {
       return true; // Still locked
     }
     // Lockout expired — reset
-    await SecureStore.deleteItemAsync(ATTEMPT_COUNT_KEY);
+    await secureStorage.deleteItem(ATTEMPT_COUNT_KEY);
   }
 
   return false;
 }
 
 async function incrementUnlockAttempts(): Promise<void> {
-  const attemptData = await SecureStore.getItemAsync(ATTEMPT_COUNT_KEY);
+  const attemptData = await secureStorage.getItem(ATTEMPT_COUNT_KEY);
   const now = Date.now();
 
   if (attemptData) {
     const { count, timestamp } = JSON.parse(attemptData);
-    await SecureStore.setItemAsync(
+    await secureStorage.setItem(
       ATTEMPT_COUNT_KEY,
       JSON.stringify({ count: count + 1, timestamp })
     );
   } else {
-    await SecureStore.setItemAsync(
+    await secureStorage.setItem(
       ATTEMPT_COUNT_KEY,
       JSON.stringify({ count: 1, timestamp: now })
     );
