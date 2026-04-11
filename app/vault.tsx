@@ -20,14 +20,14 @@ export default function VaultScreen() {
   const { masterKey } = useAppStore();
 
   const loadEntries = useCallback(async () => {
-    if (!params.vaultId) return;
+    if (!params.vaultId || !masterKey) return;
     try {
-      const data = await getEntriesForVault(params.vaultId);
+      const data = await getEntriesForVault(params.vaultId, masterKey);
       setEntries(data);
     } catch (error: any) {
-      Alert.alert('Error', error.message);
+      Alert.alert('Error', 'Failed to load entries');
     }
-  }, [params.vaultId]);
+  }, [params.vaultId, masterKey]);
 
   useFocusEffect(
     useCallback(() => {

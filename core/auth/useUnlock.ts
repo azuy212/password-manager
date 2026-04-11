@@ -1,10 +1,11 @@
-import { useState, useCallback } from 'react';
-import { unlockIdentity, hasIdentity } from './identityService';
+import { useState, useCallback, useEffect } from 'react';
+import { unlockIdentity, hasIdentity, getIdentity } from './identityService';
+import type { SecureKey } from '../crypto';
 
 interface UseUnlockReturn {
   isUnlocked: boolean;
   hasIdentity: boolean;
-  unlock: (password: string) => Promise<number[] | null>;
+  unlock: (password: string) => Promise<SecureKey | null>;
   lock: () => void;
 }
 
@@ -13,14 +14,13 @@ interface UseUnlockReturn {
  */
 export function useUnlock(): UseUnlockReturn {
   const [isUnlocked, setIsUnlocked] = useState(false);
-  const [hasIdentityState, setHasIdentityState] = useState(false);
+  const [hasIdentityState, setHasIdentityState] = useState<boolean | null>(null);
 
-  // Check if identity exists on mount
-  useState(() => {
+  useEffect(() => {
     hasIdentity().then(setHasIdentityState);
-  });
+  }, []);
 
-  const unlock = useCallback(async (password: string): Promise<number[] | null> => {
+  const unlock = useCallback(async (password: string): Promise<SecureKey | null> => {
     const masterKey = await unlockIdentity(password);
     if (masterKey) {
       setIsUnlocked(true);
@@ -34,7 +34,7 @@ export function useUnlock(): UseUnlockReturn {
 
   return {
     isUnlocked,
-    hasIdentity: hasIdentityState,
+    hasIdentity: hasIdentityState ?? false,
     unlock,
     lock,
   };

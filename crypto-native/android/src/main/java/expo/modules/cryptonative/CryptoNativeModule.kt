@@ -1,22 +1,19 @@
 package expo.modules.cryptonative
 
-import android.security.keystore.KeyGenParameterSpec
-import android.security.keystore.KeyProperties
-import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.security.KeyPairGenerator
-import java.security.MessageDigest
+import java.security.KeyFactory
 import java.security.Signature
 import java.security.SecureRandom
+import java.security.spec.PKCS8EncodedKeySpec
+import java.security.spec.X509EncodedKeySpec
 import javax.crypto.Cipher
-import javax.crypto.KeyGenerator
-import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
 class CryptoNativeModule : Module() {
-  private val secureRandom = SecureRandom()
+  private val secureRandom = SecureRandom.getInstanceStrong()
 
   override fun definition() = ModuleDefinition {
     Name("CryptoNative")
@@ -42,14 +39,14 @@ class CryptoNativeModule : Module() {
       val plainText = data.map { it.toByte() }.toByteArray()
       val keyData = keyBytes.map { it.toByte() }.toByteArray()
       val secretKey = SecretKeySpec(keyData, "AES")
-      
+
       val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-      cipher.init(Cipher.ENCRYPT_MODE, secretKey)
-      
+      cipher.init(Cipher.ENCRYPT_MODE, secretKey, secureRandom)
+
       val ciphertext = cipher.doFinal(plainText)
       val nonce = cipher.iv
-      val tag = ciphertext.takeLast(16) // GCM tag is last 16 bytes
-      
+      val tag = ciphertext.takeLast(16)
+
       mapOf(
         "ciphertext" to ciphertext.dropLast(16).map { it.toUByte().toInt() },
         "nonce" to nonce.toList().map { it.toUByte().toInt() },
@@ -61,51 +58,51 @@ class CryptoNativeModule : Module() {
     AsyncFunction("decrypt") { ciphertext: List<Int>, keyBytes: List<Int>, nonce: List<Int>, tag: List<Int> ->
       val keyData = keyBytes.map { it.toByte() }.toByteArray()
       val secretKey = SecretKeySpec(keyData, "AES")
-      
+
       val nonceData = nonce.map { it.toByte() }.toByteArray()
       val ciphertextBytes = ciphertext.map { it.toByte() }.toByteArray()
       val tagBytes = tag.map { it.toByte() }.toByteArray()
-      
+
       val fullCiphertext = ciphertextBytes + tagBytes
-      
+
       val cipher = Cipher.getInstance("AES/GCM/NoPadding")
       val spec = GCMParameterSpec(128, nonceData)
       cipher.init(Cipher.DECRYPT_MODE, secretKey, spec)
-      
+
       val decrypted = cipher.doFinal(fullCiphertext)
       decrypted.toList().map { it.toUByte().toInt() }
     }
 
-    // Generate KeyPair (Ed25519/EdDSA)
+    // Generate KeyPair using Ed25519 (EdDSA) — available on Android 9+ (API 28+)
     AsyncFunction("generateKeyPair") {
-      // For Android, we'll use simple RSA keypair for compatibility
-      // In production, consider BouncyCastle for Ed25519
-      val keyPairGenerator = KeyPairGenerator.getInstance("RSA")
-      keyPairGenerator.initialize(2048)
+      val keyPairGenerator = KeyPairGenerator.getInstance("Ed25519")
       val keyPair = keyPairGenerator.generateKeyPair()
-      
+
       mapOf(
         "privateKey" to keyPair.private.encoded.toList().map { it.toUByte().toInt() },
         "publicKey" to keyPair.public.encoded.toList().map { it.toUByte().toInt() }
       )
     }
 
-    // Sign data
+    // Sign data with Ed25519
     AsyncFunction("sign") { data: List<Int>, privateKeyBytes: List<Int> ->
-      // Simplified signing - in production use proper Ed25519
-      val signature = Signature.getInstance("SHA256withRSA")
-      signature.initSign(java.security.KeyFactory.getInstance("RSA")
-        .generatePrivate(java.security.spec.PKCS8EncodedKeySpec(privateKeyBytes.map { it.toByte() }.toByteArray())))
+      val keySpec = PKCS8EncodedKeySpec(privateKeyBytes.map { it.toByte() }.toByteArray())
+      val privateKey = KeyFactory.getInstance("Ed25519").generatePrivate(keySpec)
+
+      val signature = Signature.getInstance("Ed25519")
+      signature.initSign(privateKey)
       signature.update(data.map { it.toByte() }.toByteArray())
       signature.sign().toList().map { it.toUByte().toInt() }
     }
 
-    // Verify signature
+    // Verify signature with Ed25519 public key
     AsyncFunction("verify") { data: List<Int>, signatureBytes: List<Int>, publicKeyBytes: List<Int> ->
       try {
-        val signature = Signature.getInstance("SHA256withRSA")
-        signature.initVerify(java.security.KeyFactory.getInstance("RSA")
-          .generatePublic(java.security.spec.X509EncodedKeySpec(publicKeyBytes.map { it.toByte() }.toByteArray())))
+        val keySpec = X509EncodedKeySpec(publicKeyBytes.map { it.toByte() }.toByteArray())
+        val publicKey = KeyFactory.getInstance("Ed25519").generatePublic(keySpec)
+
+        val signature = Signature.getInstance("Ed25519")
+        signature.initVerify(publicKey)
         signature.update(data.map { it.toByte() }.toByteArray())
         signature.verify(signatureBytes.map { it.toByte() }.toByteArray())
       } catch (e: Exception) {
@@ -113,7 +110,15 @@ class CryptoNativeModule : Module() {
       }
     }
 
-    // Generate random bytes
+    // HMAC-SHA256
+    AsyncFunction("hmacSha256") { data: List<Int>, keyBytes: List<Int> ->
+      val mac = javax.crypto.Mac.getInstance("HmacSHA256")
+      val keySpec = javax.crypto.spec.SecretKeySpec(keyBytes.map { it.toByte() }.toByteArray(), "HmacSHA256")
+      mac.init(keySpec)
+      mac.doFinal(data.map { it.toByte() }.toByteArray()).toList().map { it.toUByte().toInt() }
+    }
+
+    // Generate random bytes using strong SecureRandom
     AsyncFunction("generateRandomBytes") { length: Int ->
       val bytes = ByteArray(length)
       secureRandom.nextBytes(bytes)

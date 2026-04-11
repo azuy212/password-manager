@@ -44,7 +44,7 @@ export default function UnlockScreen() {
 
   const handleSubmit = async () => {
     if (!password.trim()) {
-      Alert.alert('Error', 'Please enter your password');
+      Alert.alert('Error', 'Unable to unlock vault');
       return;
     }
 
@@ -61,11 +61,11 @@ export default function UnlockScreen() {
         setAuthenticated(true);
         router.replace('/(tabs)');
       } else {
-        Alert.alert('Error', 'Incorrect password');
+        Alert.alert('Error', 'Unable to unlock vault');
       }
     } catch (error: any) {
       setError(error.message);
-      Alert.alert('Error', error.message);
+      Alert.alert('Error', 'Unable to unlock vault');
     } finally {
       setLoading(false);
     }

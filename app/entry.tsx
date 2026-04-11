@@ -38,7 +38,7 @@ export default function EntryScreen() {
   const loadEntry = async () => {
     if (!params.entryId || !masterKey) return;
     try {
-      const entry = await getEntry(params.entryId);
+      const entry = await getEntry(params.entryId, masterKey);
       if (entry) {
         setTitle(entry.title);
         setUsername(entry.username);
@@ -63,7 +63,7 @@ export default function EntryScreen() {
         setUrl(entry.url || '');
       }
     } catch (error: any) {
-      Alert.alert('Error', error.message);
+      Alert.alert('Error', 'Failed to load entry');
     }
   };
 

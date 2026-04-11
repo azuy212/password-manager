@@ -103,6 +103,17 @@ public class CryptoNativeModule: Module {
       return publicKey.isValidSignature(Data(signature), for: Data(data))
     }
 
+    // HMAC-SHA256
+    AsyncFunction("hmacSha256") { (data: [UInt8], keyBytes: [UInt8]) -> [UInt8] in
+      var mac = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+      data.withUnsafeBufferPointer { dataPtr in
+        keyBytes.withUnsafeBufferPointer { keyPtr in
+          CCHmac(CCHmacAlgorithm(kCCHmacAlgSHA256), keyPtr.baseAddress, keyPtr.count, dataPtr.baseAddress, dataPtr.count, &mac)
+        }
+      }
+      return mac
+    }
+
     // Generate random bytes
     AsyncFunction("generateRandomBytes") { (length: Int) -> [UInt8] in
       var bytes = [UInt8](repeating: 0, count: length)

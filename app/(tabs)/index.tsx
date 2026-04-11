@@ -50,7 +50,7 @@ export default function VaultsScreen() {
             );
             loadVaults();
           } catch (error: any) {
-            Alert.alert('Error', error.message);
+            Alert.alert('Error', 'Failed to create vault');
           }
         }
       },

@@ -10,6 +10,7 @@ declare class CryptoNativeModule extends NativeModule<CryptoNativeModuleEvents> 
   generateKeyPair(): Promise<KeyPair>;
   sign(data: DataBytes, privateKey: KeyBytes): Promise<DataBytes>;
   verify(data: DataBytes, signature: DataBytes, publicKey: KeyBytes): Promise<boolean>;
+  hmacSha256(data: DataBytes, key: KeyBytes): Promise<DataBytes>;
   generateRandomBytes(length: number): Promise<DataBytes>;
 }
 

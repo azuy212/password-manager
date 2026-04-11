@@ -1,9 +1,10 @@
 import { supabase } from '../../services/supabaseClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { uuidv4 } from '../../utils/uuid';
+import * as Crypto from 'expo-crypto';
 
 import type { Vault, VaultEntry } from '../../types/vault';
-import { getVaults, createEntry, updateEntry, deleteEntry } from '../vault/vaultService';
+import { getVaults, getEntriesForVault } from '../vault/vaultService';
+import type { SecureKey } from '../crypto';
 
 const DEVICE_ID_KEY = 'device_id';
 const LAST_SYNC_KEY = 'last_sync';
@@ -14,7 +15,7 @@ const LAST_SYNC_KEY = 'last_sync';
 export async function getDeviceId(): Promise<string> {
   let deviceId = await AsyncStorage.getItem(DEVICE_ID_KEY);
   if (!deviceId) {
-    deviceId = uuidv4();
+    deviceId = Crypto.randomUUID();
     await AsyncStorage.setItem(DEVICE_ID_KEY, deviceId);
   }
   return deviceId;
@@ -35,9 +36,9 @@ export async function syncVaultsToCloud(vaults: Vault[], userId: string): Promis
         updated_at: new Date(vault.updatedAt).toISOString(),
       })
       .select();
-    
+
     if (error) {
-      console.error('Failed to sync vault:', error);
+      console.error('Failed to sync vault:', error.message);
       throw error;
     }
   }
@@ -51,12 +52,12 @@ export async function syncVaultsFromCloud(userId: string): Promise<Vault[]> {
     .from('vaults')
     .select('*')
     .eq('user_id', userId);
-  
+
   if (error) {
-    console.error('Failed to sync vaults from cloud:', error);
+    console.error('Failed to sync vaults from cloud:', error.message);
     throw error;
   }
-  
+
   return (data || []).map(row => ({
     id: row.id,
     name: row.name,
@@ -84,9 +85,9 @@ export async function syncEntriesToCloud(entries: VaultEntry[], userId: string):
         url: entry.url || null,
         updated_at: new Date(entry.updatedAt).toISOString(),
       });
-    
+
     if (error) {
-      console.error('Failed to sync entry:', error);
+      console.error('Failed to sync entry:', error.message);
       throw error;
     }
   }
@@ -101,12 +102,12 @@ export async function syncEntriesFromCloud(vaultId: string, userId: string): Pro
     .select('*')
     .eq('vault_id', vaultId)
     .eq('user_id', userId);
-  
+
   if (error) {
-    console.error('Failed to sync entries from cloud:', error);
+    console.error('Failed to sync entries from cloud:', error.message);
     throw error;
   }
-  
+
   return (data || []).map(row => ({
     id: row.id,
     vaultId: row.vault_id,
@@ -139,22 +140,23 @@ export async function updateLastSync(): Promise<void> {
 /**
  * Full sync: upload local changes and download remote changes
  */
-export async function fullSync(userId: string, masterKey: number[]): Promise<void> {
+export async function fullSync(userId: string, masterKey: SecureKey): Promise<void> {
   // Get local data
   const localVaults = await getVaults();
-  
+
   // Upload to cloud
   await syncVaultsToCloud(localVaults, userId);
-  
+
   // Download from cloud
   const cloudVaults = await syncVaultsFromCloud(userId);
-  
+
   // Sync entries for each vault
   for (const vault of cloudVaults) {
-    const localEntries = await getVaults().then(() => []); // Get entries for this vault
+    // FIX: Actually get entries for this vault instead of returning []
+    const localEntries = await getEntriesForVault(vault.id, masterKey);
     await syncEntriesToCloud(localEntries, userId);
     await syncEntriesFromCloud(vault.id, userId);
   }
-  
+
   await updateLastSync();
 }
