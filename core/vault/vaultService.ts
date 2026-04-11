@@ -20,42 +20,43 @@ function withLock<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /**
- * Encrypt all fields of a vault entry before storage
+ * Encrypt the entire entry content as one JSON payload
  */
-async function encryptEntry(input: VaultEntryInput, key: SecureKey): Promise<VaultEntry> {
-  const encryptedTitle = await encryptString(input.title, key);
-  const encryptedUsername = await encryptString(input.username, key);
-  const encryptedUrl = input.url ? await encryptString(input.url, key) : undefined;
-
-  return {
-    id: Crypto.randomUUID(),
-    vaultId: input.vaultId,
-    title: encryptedTitle,
-    username: encryptedUsername,
-    encryptedPassword: input.encryptedPassword,
-    encryptedNotes: input.encryptedNotes,
-    url: encryptedUrl,
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-  };
+async function encryptEntryContent(
+  input: VaultEntryInput,
+  key: SecureKey
+): Promise<string> {
+  const content = JSON.stringify({
+    title: input.title,
+    username: input.username,
+    password: input.password,
+    notes: input.notes || '',
+    url: input.url || '',
+  });
+  return encryptString(content, key);
 }
 
 /**
- * Decrypt all fields of a vault entry after retrieval
+ * Decrypt the entire entry content from one JSON payload
  */
-async function decryptEntry(entry: VaultEntry, key: SecureKey): Promise<VaultEntry> {
-  try {
-    const title = await decryptString(entry.title, key);
-    const username = await decryptString(entry.username, key);
-    const url = entry.url ? await decryptString(entry.url, key) : undefined;
-    const encryptedNotes = entry.encryptedNotes ? await decryptString(entry.encryptedNotes, key) : undefined;
+async function decryptEntryContent(
+  encryptedPayload: string,
+  key: SecureKey
+): Promise<VaultEntry> {
+  const contentJson = await decryptString(encryptedPayload, key);
+  const content = JSON.parse(contentJson);
 
-    return { ...entry, title, username, url, encryptedNotes };
-  } catch (e) {
-    // If decryption fails, return the entry as-is (may be corrupted)
-    console.warn('Failed to decrypt entry', entry.id);
-    return entry;
-  }
+  return {
+    id: '',
+    vaultId: '',
+    title: content.title || '',
+    username: content.username || '',
+    password: content.password || '',
+    notes: content.notes || undefined,
+    url: content.url || undefined,
+    createdAt: 0,
+    updatedAt: 0,
+  };
 }
 
 /**
@@ -98,9 +99,11 @@ export async function deleteVault(vaultId: string): Promise<void> {
     await AsyncStorage.setItem(VAULTS_KEY, JSON.stringify(filtered));
 
     // Delete all entries in the vault
-    const entries = await getEntriesForVault(vaultId);
-    for (const entry of entries) {
-      await deleteEntry(entry.id);
+    const stored = await AsyncStorage.getItem(ENTRIES_KEY);
+    if (stored) {
+      const entries: any[] = JSON.parse(stored);
+      const filtered = entries.filter(e => e.vaultId !== vaultId);
+      await AsyncStorage.setItem(ENTRIES_KEY, JSON.stringify(filtered));
     }
   });
 }
@@ -108,48 +111,68 @@ export async function deleteVault(vaultId: string): Promise<void> {
 /**
  * Get all entries for a vault (decrypted)
  */
-export async function getEntriesForVault(vaultId: string, masterKey?: SecureKey): Promise<VaultEntry[]> {
+export async function getEntriesForVault(vaultId: string, masterKey: SecureKey): Promise<VaultEntry[]> {
   const stored = await AsyncStorage.getItem(ENTRIES_KEY);
   if (!stored) return [];
 
-  const entries: VaultEntry[] = JSON.parse(stored);
+  const entries: any[] = JSON.parse(stored);
   const vaultEntries = entries.filter(e => e.vaultId === vaultId);
 
-  if (masterKey) {
-    return Promise.all(vaultEntries.map(e => decryptEntry(e, masterKey)));
+  if (!masterKey) return [];
+
+  // Decrypt each entry
+  const result: VaultEntry[] = [];
+  for (const entry of vaultEntries) {
+    try {
+      const decrypted = await decryptEntryContent(entry.encryptedPayload, masterKey);
+      decrypted.id = entry.id;
+      decrypted.vaultId = entry.vaultId;
+      decrypted.createdAt = entry.createdAt;
+      decrypted.updatedAt = entry.updatedAt;
+      result.push(decrypted);
+    } catch (e) {
+      console.warn('Failed to decrypt entry', entry.id);
+    }
   }
 
-  return vaultEntries;
+  return result;
 }
 
 /**
- * Create a new vault entry (all fields encrypted)
+ * Create a new vault entry (entire content encrypted as one payload)
  */
 export async function createEntry(input: VaultEntryInput, masterKey: SecureKey): Promise<VaultEntry> {
   return withLock(async () => {
     const stored = await AsyncStorage.getItem(ENTRIES_KEY);
-    const entries: VaultEntry[] = stored ? JSON.parse(stored) : [];
+    const entries: any[] = stored ? JSON.parse(stored) : [];
 
-    // Encrypt all fields before storing
-    const encryptedInput: VaultEntryInput = {
-      ...input,
-      title: input.title,
-      username: input.username,
-      encryptedPassword: input.encryptedPassword,
-      url: input.url,
-      encryptedNotes: input.encryptedNotes,
+    const now = Date.now();
+    const encryptedPayload = await encryptEntryContent(input, masterKey);
+
+    const newEntry = {
+      id: Crypto.randomUUID(),
+      vaultId: input.vaultId,
+      encryptedPayload,
+      createdAt: now,
+      updatedAt: now,
     };
 
-    const newEntry = await encryptEntry(encryptedInput, masterKey);
     entries.push(newEntry);
     await AsyncStorage.setItem(ENTRIES_KEY, JSON.stringify(entries));
 
-    return newEntry;
+    // Return the decrypted entry for immediate display
+    const decrypted = await decryptEntryContent(encryptedPayload, masterKey);
+    decrypted.id = newEntry.id;
+    decrypted.vaultId = newEntry.vaultId;
+    decrypted.createdAt = newEntry.createdAt;
+    decrypted.updatedAt = newEntry.updatedAt;
+
+    return decrypted;
   });
 }
 
 /**
- * Update a vault entry (re-encrypt all fields)
+ * Update a vault entry (re-encrypt entire content)
  */
 export async function updateEntry(
   entryId: string,
@@ -160,28 +183,44 @@ export async function updateEntry(
     const stored = await AsyncStorage.getItem(ENTRIES_KEY);
     if (!stored) return null;
 
-    const entries: VaultEntry[] = JSON.parse(stored);
+    const entries: any[] = JSON.parse(stored);
     const index = entries.findIndex(e => e.id === entryId);
     if (index === -1) return null;
 
-    // Re-encrypt updated fields
+    const existing = entries[index];
+
+    // First decrypt existing entry to get current values
+    const current = await decryptEntryContent(existing.encryptedPayload, masterKey);
+
+    // Merge updates
     const updatedInput: VaultEntryInput = {
-      vaultId: entries[index].vaultId,
-      title: updates.title ?? entries[index].title,
-      username: updates.username ?? entries[index].username,
-      encryptedPassword: updates.encryptedPassword ?? entries[index].encryptedPassword,
-      url: updates.url ?? entries[index].url,
-      encryptedNotes: updates.encryptedNotes ?? entries[index].encryptedNotes,
+      vaultId: existing.vaultId,
+      title: updates.title ?? current.title,
+      username: updates.username ?? current.username,
+      password: updates.password ?? current.password,
+      url: updates.url ?? current.url,
+      notes: updates.notes ?? current.notes,
     };
 
-    const reEncrypted = await encryptEntry(updatedInput, masterKey);
-    reEncrypted.id = entryId;
-    reEncrypted.createdAt = entries[index].createdAt;
-    reEncrypted.updatedAt = Date.now();
+    // Re-encrypt everything as one payload
+    const encryptedPayload = await encryptEntryContent(updatedInput, masterKey);
 
-    entries[index] = reEncrypted;
+    entries[index] = {
+      ...existing,
+      encryptedPayload,
+      updatedAt: Date.now(),
+    };
+
     await AsyncStorage.setItem(ENTRIES_KEY, JSON.stringify(entries));
-    return entries[index];
+
+    // Return the decrypted entry
+    const decrypted = await decryptEntryContent(encryptedPayload, masterKey);
+    decrypted.id = entries[index].id;
+    decrypted.vaultId = entries[index].vaultId;
+    decrypted.createdAt = entries[index].createdAt;
+    decrypted.updatedAt = entries[index].updatedAt;
+
+    return decrypted;
   });
 }
 
@@ -193,7 +232,7 @@ export async function deleteEntry(entryId: string): Promise<void> {
     const stored = await AsyncStorage.getItem(ENTRIES_KEY);
     if (!stored) return;
 
-    const entries: VaultEntry[] = JSON.parse(stored);
+    const entries: any[] = JSON.parse(stored);
     const filtered = entries.filter(e => e.id !== entryId);
     await AsyncStorage.setItem(ENTRIES_KEY, JSON.stringify(filtered));
   });
@@ -202,16 +241,22 @@ export async function deleteEntry(entryId: string): Promise<void> {
 /**
  * Get a single entry by ID (decrypted)
  */
-export async function getEntry(entryId: string, masterKey?: SecureKey): Promise<VaultEntry | null> {
+export async function getEntry(entryId: string, masterKey: SecureKey): Promise<VaultEntry | null> {
   const stored = await AsyncStorage.getItem(ENTRIES_KEY);
-  if (!stored) return null;
+  if (!stored || !masterKey) return null;
 
-  const entries: VaultEntry[] = JSON.parse(stored);
-  const entry = entries.find(e => e.id === entryId) || null;
+  const entries: any[] = JSON.parse(stored);
+  const entry = entries.find(e => e.id === entryId);
+  if (!entry) return null;
 
-  if (entry && masterKey) {
-    return decryptEntry(entry, masterKey);
+  try {
+    const decrypted = await decryptEntryContent(entry.encryptedPayload, masterKey);
+    decrypted.id = entry.id;
+    decrypted.vaultId = entry.vaultId;
+    decrypted.createdAt = entry.createdAt;
+    decrypted.updatedAt = entry.updatedAt;
+    return decrypted;
+  } catch (e) {
+    return null;
   }
-
-  return entry;
 }

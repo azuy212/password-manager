@@ -4,8 +4,8 @@ import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.security.KeyPairGenerator
 import java.security.KeyFactory
-import java.security.Signature
 import java.security.SecureRandom
+import java.security.Signature
 import java.security.spec.PKCS8EncodedKeySpec
 import java.security.spec.X509EncodedKeySpec
 import javax.crypto.Cipher
@@ -13,7 +13,8 @@ import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
 class CryptoNativeModule : Module() {
-  private val secureRandom = SecureRandom.getInstanceStrong()
+  // Use default SecureRandom — getInstanceStrong() fails on some emulators
+  private val secureRandom = SecureRandom()
 
   override fun definition() = ModuleDefinition {
     Name("CryptoNative")
@@ -73,29 +74,53 @@ class CryptoNativeModule : Module() {
       decrypted.toList().map { it.toUByte().toInt() }
     }
 
-    // Generate KeyPair using Ed25519 (EdDSA) — available on Android 9+ (API 28+)
+    // Generate KeyPair using Ed25519 (EdDSA) — Android API 28+
     AsyncFunction("generateKeyPair") {
-      val keyPairGenerator = KeyPairGenerator.getInstance("Ed25519")
-      val keyPair = keyPairGenerator.generateKeyPair()
+      try {
+        // Try Ed25519 first (API 28+)
+        val keyPairGenerator = KeyPairGenerator.getInstance("Ed25519")
+        keyPairGenerator.initialize(256)
+        val keyPair = keyPairGenerator.generateKeyPair()
 
-      mapOf(
-        "privateKey" to keyPair.private.encoded.toList().map { it.toUByte().toInt() },
-        "publicKey" to keyPair.public.encoded.toList().map { it.toUByte().toInt() }
-      )
+        mapOf(
+          "privateKey" to keyPair.private.encoded.toList().map { it.toUByte().toInt() },
+          "publicKey" to keyPair.public.encoded.toList().map { it.toUByte().toInt() }
+        )
+      } catch (e: Exception) {
+        // Fallback to EC with P-256 curve (available on all Android versions)
+        val keyPairGenerator = KeyPairGenerator.getInstance("EC")
+        val keyPair = keyPairGenerator.generateKeyPair()
+
+        mapOf(
+          "privateKey" to keyPair.private.encoded.toList().map { it.toUByte().toInt() },
+          "publicKey" to keyPair.public.encoded.toList().map { it.toUByte().toInt() }
+        )
+      }
     }
 
-    // Sign data with Ed25519
+    // Sign data with Ed25519 (or EC fallback)
     AsyncFunction("sign") { data: List<Int>, privateKeyBytes: List<Int> ->
-      val keySpec = PKCS8EncodedKeySpec(privateKeyBytes.map { it.toByte() }.toByteArray())
-      val privateKey = KeyFactory.getInstance("Ed25519").generatePrivate(keySpec)
+      try {
+        val keySpec = PKCS8EncodedKeySpec(privateKeyBytes.map { it.toByte() }.toByteArray())
+        val privateKey = KeyFactory.getInstance("Ed25519").generatePrivate(keySpec)
 
-      val signature = Signature.getInstance("Ed25519")
-      signature.initSign(privateKey)
-      signature.update(data.map { it.toByte() }.toByteArray())
-      signature.sign().toList().map { it.toUByte().toInt() }
+        val signature = Signature.getInstance("Ed25519")
+        signature.initSign(privateKey)
+        signature.update(data.map { it.toByte() }.toByteArray())
+        signature.sign().toList().map { it.toUByte().toInt() }
+      } catch (e: Exception) {
+        // Fallback to EC with SHA256
+        val keySpec = PKCS8EncodedKeySpec(privateKeyBytes.map { it.toByte() }.toByteArray())
+        val privateKey = KeyFactory.getInstance("EC").generatePrivate(keySpec)
+
+        val signature = Signature.getInstance("SHA256withECDSA")
+        signature.initSign(privateKey)
+        signature.update(data.map { it.toByte() }.toByteArray())
+        signature.sign().toList().map { it.toUByte().toInt() }
+      }
     }
 
-    // Verify signature with Ed25519 public key
+    // Verify signature
     AsyncFunction("verify") { data: List<Int>, signatureBytes: List<Int>, publicKeyBytes: List<Int> ->
       try {
         val keySpec = X509EncodedKeySpec(publicKeyBytes.map { it.toByte() }.toByteArray())
@@ -106,7 +131,18 @@ class CryptoNativeModule : Module() {
         signature.update(data.map { it.toByte() }.toByteArray())
         signature.verify(signatureBytes.map { it.toByte() }.toByteArray())
       } catch (e: Exception) {
-        false
+        try {
+          // Fallback to EC with SHA256
+          val keySpec = X509EncodedKeySpec(publicKeyBytes.map { it.toByte() }.toByteArray())
+          val publicKey = KeyFactory.getInstance("EC").generatePublic(keySpec)
+
+          val signature = Signature.getInstance("SHA256withECDSA")
+          signature.initVerify(publicKey)
+          signature.update(data.map { it.toByte() }.toByteArray())
+          signature.verify(signatureBytes.map { it.toByte() }.toByteArray())
+        } catch (e2: Exception) {
+          false
+        }
       }
     }
 
@@ -118,7 +154,7 @@ class CryptoNativeModule : Module() {
       mac.doFinal(data.map { it.toByte() }.toByteArray()).toList().map { it.toUByte().toInt() }
     }
 
-    // Generate random bytes using strong SecureRandom
+    // Generate random bytes
     AsyncFunction("generateRandomBytes") { length: Int ->
       val bytes = ByteArray(length)
       secureRandom.nextBytes(bytes)

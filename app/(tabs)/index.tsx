@@ -1,20 +1,24 @@
-import { createVault, deleteVault, getVaults } from '@/core/vault/vaultService';
-import { useAppStore } from '@/store/useAppStore';
-import type { Vault } from '@/types/vault';
-import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useAppStore } from '@/store/useAppStore';
+import { getVaults, createVault, deleteVault } from '@/core/vault/vaultService';
+import type { Vault } from '@/types/vault';
 import React, { useCallback, useState } from 'react';
 import {
   Alert,
   FlatList,
+  Modal,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 
 export default function VaultsScreen() {
   const [vaults, setVaults] = useState<Vault[]>([]);
+  const [showNewVaultModal, setShowNewVaultModal] = useState(false);
+  const [newVaultName, setNewVaultName] = useState('');
   const router = useRouter();
   const { setVaults: setStoreVaults, masterKey } = useAppStore();
 
@@ -35,27 +39,29 @@ export default function VaultsScreen() {
   );
 
   const handleCreateVault = () => {
-    Alert.prompt(
-      'New Vault',
-      'Enter vault name:',
-      async (name) => {
-        if (name && masterKey) {
-          try {
-            await createVault(
-              {
-                name,
-                encryptedEncryptionKey: '',
-              },
-              masterKey
-            );
-            loadVaults();
-          } catch (error: any) {
-            Alert.alert('Error', 'Failed to create vault');
-          }
-        }
-      },
-      'plain-text'
-    );
+    setNewVaultName('');
+    setShowNewVaultModal(true);
+  };
+
+  const handleSaveVault = async () => {
+    if (!newVaultName.trim() || !masterKey) {
+      setShowNewVaultModal(false);
+      return;
+    }
+    try {
+      await createVault(
+        {
+          name: newVaultName.trim(),
+          encryptedEncryptionKey: '',
+        },
+        masterKey
+      );
+      setShowNewVaultModal(false);
+      loadVaults();
+    } catch (error: any) {
+      Alert.alert('Error', 'Failed to create vault');
+      setShowNewVaultModal(false);
+    }
   };
 
   const handleDeleteVault = (vault: Vault) => {
@@ -124,6 +130,38 @@ export default function VaultsScreen() {
       <TouchableOpacity style={styles.fab} onPress={handleCreateVault}>
         <Ionicons name="add" size={28} color="#fff" />
       </TouchableOpacity>
+
+      <Modal visible={showNewVaultModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>New Vault</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Enter vault name"
+              placeholderTextColor="#999"
+              value={newVaultName}
+              onChangeText={setNewVaultName}
+              autoFocus
+              returnKeyType="done"
+              onSubmitEditing={handleSaveVault}
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonCancel]}
+                onPress={() => setShowNewVaultModal(false)}
+              >
+                <Text style={styles.modalButtonTextCancel}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonCreate]}
+                onPress={handleSaveVault}
+              >
+                <Text style={styles.modalButtonTextCreate}>Create</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -187,5 +225,56 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 4,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 20,
+    width: '80%',
+    maxWidth: 320,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  modalInput: {
+    backgroundColor: '#f5f5f5',
+    padding: 12,
+    borderRadius: 8,
+    fontSize: 16,
+    marginBottom: 16,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  modalButtonCancel: {
+    backgroundColor: '#f5f5f5',
+  },
+  modalButtonCreate: {
+    backgroundColor: '#007AFF',
+  },
+  modalButtonTextCancel: {
+    color: '#333',
+    fontWeight: '600',
+  },
+  modalButtonTextCreate: {
+    color: '#fff',
+    fontWeight: '600',
   },
 });

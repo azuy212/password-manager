@@ -1,4 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
 
 import CryptoNative from 'crypto-native';
@@ -9,6 +10,10 @@ const IDENTITY_KEY = 'identity';
 const MAX_UNLOCK_ATTEMPTS = 10;
 const ATTEMPT_COUNT_KEY = 'unlock_attempts';
 const LOCKOUT_DURATION_MS = 5 * 60 * 1000; // 5 minutes
+
+// Keys used by vault service — must be wiped on reset
+const VAULTS_KEY = 'vaults';
+const ENTRIES_KEY = 'vault_entries';
 
 /**
  * Create a new identity with keypair
@@ -109,11 +114,14 @@ export async function hasIdentity(): Promise<boolean> {
 }
 
 /**
- * Clear identity (for logout/reset)
+ * Clear identity AND all vault data (full reset)
  */
 export async function clearIdentity(): Promise<void> {
+  // Clear SecureStore
   await SecureStore.deleteItemAsync(IDENTITY_KEY);
   await SecureStore.deleteItemAsync(ATTEMPT_COUNT_KEY);
+  // Clear AsyncStorage (vaults & entries)
+  await AsyncStorage.multiRemove([VAULTS_KEY, ENTRIES_KEY]);
 }
 
 /**

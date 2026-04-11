@@ -14,7 +14,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppStore } from '../store/useAppStore';
 import { createEntry, updateEntry, getEntry, deleteEntry } from '../core/vault/vaultService';
-import { decryptString, encryptString } from '../core/crypto';
 import type { VaultEntryInput } from '../types/vault';
 
 export default function EntryScreen() {
@@ -40,26 +39,11 @@ export default function EntryScreen() {
     try {
       const entry = await getEntry(params.entryId, masterKey);
       if (entry) {
+        // getEntry already decrypts the content
         setTitle(entry.title);
         setUsername(entry.username);
-        // Decrypt password
-        try {
-          const decryptedPassword = await decryptString(entry.encryptedPassword, masterKey);
-          setPassword(decryptedPassword);
-        } catch {
-          setPassword('');
-        }
-        // Decrypt notes if present
-        if (entry.encryptedNotes) {
-          try {
-            const decryptedNotes = await decryptString(entry.encryptedNotes, masterKey);
-            setNotes(decryptedNotes);
-          } catch {
-            setNotes('');
-          }
-        } else {
-          setNotes('');
-        }
+        setPassword(entry.password || '');
+        setNotes(entry.notes || '');
         setUrl(entry.url || '');
       }
     } catch (error: any) {
@@ -79,21 +63,13 @@ export default function EntryScreen() {
     }
 
     try {
-      // Encrypt password and notes before saving
-      const encryptedPasswordStr = await encryptString(password, masterKey);
-
-      let encryptedNotesStr: string | undefined;
-      if (notes.trim()) {
-        encryptedNotesStr = await encryptString(notes, masterKey);
-      }
-
       const input: VaultEntryInput = {
         vaultId: params.vaultId as string,
         title,
         username,
-        encryptedPassword: encryptedPasswordStr,
+        password,       // plaintext, vault service encrypts
         url: url || undefined,
-        encryptedNotes: encryptedNotesStr,
+        notes: notes.trim() || undefined, // plaintext, vault service encrypts
       };
 
       if (params.entryId) {

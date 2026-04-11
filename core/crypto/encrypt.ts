@@ -1,5 +1,6 @@
 import CryptoNative from 'crypto-native';
 import { SecureKey, deriveHmacKey } from './deriveMasterKey';
+import { stringToBytes, bytesToString } from '@/utils/encoding';
 
 /**
  * Encrypt data using AES-GCM with HMAC integrity
@@ -28,9 +29,8 @@ export async function decrypt(
  * Compute HMAC-SHA256 for integrity verification using native module
  */
 async function computeHmac(data: string, key: SecureKey): Promise<string> {
-  const dataBytes = Array.from(new TextEncoder().encode(data));
+  const dataBytes = stringToBytes(data);
   const hmacBytes = await CryptoNative.hmacSha256(dataBytes, key.toArray());
-  // Return as hex string
   return hmacBytes.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
@@ -38,7 +38,7 @@ async function computeHmac(data: string, key: SecureKey): Promise<string> {
  * Encrypt a string and return JSON-encoded encrypted result with HMAC
  */
 export async function encryptString(plainText: string, key: SecureKey): Promise<string> {
-  const data = Array.from(new TextEncoder().encode(plainText));
+  const data = stringToBytes(plainText);
   const result = await encrypt(data, key);
 
   // Compute HMAC over the ciphertext for integrity
@@ -72,5 +72,5 @@ export async function decryptString(encryptedJson: string, key: SecureKey): Prom
   }
 
   const decrypted = await decrypt(cryptoResult.ciphertext, key, cryptoResult.nonce, cryptoResult.tag);
-  return new TextDecoder().decode(new Uint8Array(decrypted));
+  return bytesToString(decrypted);
 }
