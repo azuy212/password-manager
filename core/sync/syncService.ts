@@ -1,6 +1,6 @@
 import { supabase } from '../../services/supabaseClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { v4 as uuidv4 } from 'uuid';
+import { uuidv4 } from '../../utils/uuid';
 
 import type { Vault, VaultEntry } from '../../types/vault';
 import { getVaults, createEntry, updateEntry, deleteEntry } from '../vault/vaultService';

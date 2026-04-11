@@ -1,28 +1,24 @@
-import React, { useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  FlatList,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-} from 'react-native';
-import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { createVault, deleteVault, getVaults } from '@/core/vault/vaultService';
 import { useAppStore } from '@/store/useAppStore';
-import { getVaults, createVault, deleteVault } from '@/core/vault/vaultService';
 import type { Vault } from '@/types/vault';
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter, useFocusEffect } from 'expo-router';
+import React, { useCallback, useState } from 'react';
+import {
+  Alert,
+  FlatList,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
 export default function VaultsScreen() {
   const [vaults, setVaults] = useState<Vault[]>([]);
   const router = useRouter();
   const { setVaults: setStoreVaults, masterKey } = useAppStore();
 
-  useEffect(() => {
-    loadVaults();
-  }, []);
-
-  const loadVaults = async () => {
+  const loadVaults = useCallback(async () => {
     try {
       const data = await getVaults();
       setVaults(data);
@@ -30,7 +26,13 @@ export default function VaultsScreen() {
     } catch (error: any) {
       Alert.alert('Error', error.message);
     }
-  };
+  }, [setStoreVaults]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadVaults();
+    }, [loadVaults])
+  );
 
   const handleCreateVault = () => {
     Alert.prompt(

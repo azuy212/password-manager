@@ -12,18 +12,35 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useUnlock } from '../core/auth/useUnlock';
+import { getIdentity, clearIdentity } from '../core/auth/identityService';
 import { useAppStore } from '../store/useAppStore';
 
 export default function UnlockScreen() {
   const [password, setPassword] = useState('');
-  const [isSetup, setIsSetup] = useState(false);
-  const { unlock, hasIdentity } = useUnlock();
+  const { unlock } = useUnlock();
+  const [hasIdentity, setHasIdentity] = useState<boolean | null>(null);
   const router = useRouter();
-  const { setLoading, setError } = useAppStore();
+  const { setLoading, setError, setAuthenticated, setIdentity, setMasterKey, setUserId } = useAppStore();
 
   useEffect(() => {
-    setIsSetup(!hasIdentity);
-  }, [hasIdentity]);
+    getIdentity().then(identity => {
+      if (!identity) {
+        // No identity — go to setup immediately
+        router.replace('/setup');
+      } else {
+        setHasIdentity(true);
+      }
+    });
+  }, []);
+
+  if (hasIdentity === null) {
+    // Still loading
+    return (
+      <View style={styles.container}>
+        <ActivityIndicator size="large" color="#007AFF" />
+      </View>
+    );
+  }
 
   const handleSubmit = async () => {
     if (!password.trim()) {
@@ -33,17 +50,18 @@ export default function UnlockScreen() {
 
     setLoading(true);
     try {
-      if (isSetup) {
-        // First time setup
-        router.push('/setup');
-      } else {
-        // Unlock existing
-        const success = await unlock(password);
-        if (success) {
-          router.replace('/(tabs)');
-        } else {
-          Alert.alert('Error', 'Incorrect password');
+      const masterKey = await unlock(password);
+      if (masterKey) {
+        const identity = await getIdentity();
+        if (identity) {
+          setIdentity(identity);
+          setUserId(identity.id);
         }
+        setMasterKey(masterKey);
+        setAuthenticated(true);
+        router.replace('/(tabs)');
+      } else {
+        Alert.alert('Error', 'Incorrect password');
       }
     } catch (error: any) {
       setError(error.message);
@@ -59,13 +77,9 @@ export default function UnlockScreen() {
       style={styles.container}
     >
       <View style={styles.content}>
-        <Text style={styles.title}>
-          {isSetup ? 'Create Master Password' : 'Unlock Vault'}
-        </Text>
+        <Text style={styles.title}>Unlock Vault</Text>
         <Text style={styles.subtitle}>
-          {isSetup
-            ? 'Create a strong password to protect your vault'
-            : 'Enter your master password to continue'}
+          Enter your master password to continue
         </Text>
 
         <TextInput
@@ -81,9 +95,31 @@ export default function UnlockScreen() {
         />
 
         <TouchableOpacity style={styles.button} onPress={handleSubmit}>
-          <Text style={styles.buttonText}>
-            {isSetup ? 'Get Started' : 'Unlock'}
-          </Text>
+          <Text style={styles.buttonText}>Unlock</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.resetButton}
+          onPress={() => {
+            Alert.alert(
+              'Reset Vault',
+              'This will permanently delete all your data. This cannot be undone.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Delete Everything',
+                  style: 'destructive',
+                  onPress: async () => {
+                    await clearIdentity();
+                    setPassword('');
+                    router.replace('/setup');
+                  },
+                },
+              ]
+            );
+          }}
+        >
+          <Text style={styles.resetButtonText}>Forgot Password? Reset Vault</Text>
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
@@ -129,5 +165,15 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  resetButton: {
+    marginTop: 16,
+    padding: 12,
+    alignItems: 'center',
+  },
+  resetButtonText: {
+    color: '#FF3B30',
+    fontSize: 14,
+    fontWeight: '500',
   },
 });

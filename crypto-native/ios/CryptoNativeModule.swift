@@ -1,6 +1,7 @@
 import ExpoModulesCore
 import CryptoKit
 import Security
+import CommonCrypto
 
 public class CryptoNativeModule: Module {
   public func definition() -> ModuleDefinition {

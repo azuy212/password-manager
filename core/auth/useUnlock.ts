@@ -1,10 +1,10 @@
 import { useState, useCallback } from 'react';
-import { unlockIdentity, hasIdentity, getDecryptedPrivateKey } from './identityService';
+import { unlockIdentity, hasIdentity } from './identityService';
 
 interface UseUnlockReturn {
   isUnlocked: boolean;
   hasIdentity: boolean;
-  unlock: (password: string) => Promise<boolean>;
+  unlock: (password: string) => Promise<number[] | null>;
   lock: () => void;
 }
 
@@ -20,12 +20,12 @@ export function useUnlock(): UseUnlockReturn {
     hasIdentity().then(setHasIdentityState);
   });
 
-  const unlock = useCallback(async (password: string): Promise<boolean> => {
-    const success = await unlockIdentity(password);
-    if (success) {
+  const unlock = useCallback(async (password: string): Promise<number[] | null> => {
+    const masterKey = await unlockIdentity(password);
+    if (masterKey) {
       setIsUnlocked(true);
     }
-    return success;
+    return masterKey;
   }, []);
 
   const lock = useCallback(() => {

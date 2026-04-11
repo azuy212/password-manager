@@ -1,16 +1,16 @@
-import React, { useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  FlatList,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-} from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useAppStore } from '../store/useAppStore';
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
+import React, { useCallback, useState } from 'react';
+import {
+  Alert,
+  FlatList,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { getEntriesForVault } from '../core/vault/vaultService';
+import { useAppStore } from '../store/useAppStore';
 import type { VaultEntry } from '../types/vault';
 
 export default function VaultScreen() {
@@ -19,11 +19,7 @@ export default function VaultScreen() {
   const router = useRouter();
   const { masterKey } = useAppStore();
 
-  useEffect(() => {
-    loadEntries();
-  }, [params.vaultId]);
-
-  const loadEntries = async () => {
+  const loadEntries = useCallback(async () => {
     if (!params.vaultId) return;
     try {
       const data = await getEntriesForVault(params.vaultId);
@@ -31,7 +27,13 @@ export default function VaultScreen() {
     } catch (error: any) {
       Alert.alert('Error', error.message);
     }
-  };
+  }, [params.vaultId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadEntries();
+    }, [loadEntries])
+  );
 
   const handleAddEntry = () => {
     router.push({

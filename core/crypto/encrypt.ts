@@ -24,32 +24,22 @@ export async function decrypt(
 }
 
 /**
- * Encrypt a string and return base64-encoded result
+ * Encrypt a string and return JSON-encoded encrypted result
  */
 export async function encryptString(plainText: string, key: number[]): Promise<string> {
   const data = Array.from(new TextEncoder().encode(plainText));
   const result = await encrypt(data, key);
-  
-  // Combine nonce + tag + ciphertext and encode as base64
-  const combined = [...result.nonce, ...result.tag, ...result.ciphertext];
-  return btoa(String.fromCharCode(...combined));
+
+  // Store as JSON instead of base64 (btoa not available in RN)
+  return JSON.stringify(result);
 }
 
 /**
- * Decrypt a base64-encoded encrypted string
+ * Decrypt a JSON-encoded encrypted string
  */
-export async function decryptString(encryptedBase64: string, key: number[]): Promise<string> {
-  const binary = atob(encryptedBase64);
-  const combined = Array.from(binary).map(c => c.charCodeAt(0));
-  
-  // Extract nonce (12 bytes for AES-GCM), tag (16 bytes), and ciphertext
-  const nonceLength = 12;
-  const tagLength = 16;
-  
-  const nonce = combined.slice(0, nonceLength);
-  const tag = combined.slice(nonceLength, nonceLength + tagLength);
-  const ciphertext = combined.slice(nonceLength + tagLength);
-  
-  const decrypted = await decrypt(ciphertext, key, nonce, tag);
+export async function decryptString(encryptedJson: string, key: number[]): Promise<string> {
+  const result = JSON.parse(encryptedJson);
+
+  const decrypted = await decrypt(result.ciphertext, key, result.nonce, result.tag);
   return new TextDecoder().decode(new Uint8Array(decrypted));
 }

@@ -1,5 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
-import { v4 as uuidv4 } from 'uuid';
+import { uuidv4 } from '../../utils/uuid';
 import CryptoNative from 'crypto-native';
 
 import { deriveMasterKey, encryptString, decryptString } from '@/core/crypto';
@@ -11,32 +11,32 @@ const UNLOCKED_KEY = 'unlocked_master_key';
 /**
  * Create a new identity with keypair
  */
-export async function createIdentity(password: string): Promise<Identity> {
+export async function createIdentity(password: string): Promise<{ identity: Identity; masterKey: number[] }> {
   const id = uuidv4();
-  
+
   // Generate keypair
   const { privateKey, publicKey } = await CryptoNative.generateKeyPair();
-  
+
   // Derive a key from password to encrypt the private key
   const { key: encryptionKey, salt } = await deriveMasterKey(password);
-  
+
   // Encrypt the private key
   const encryptedPrivateKey = await encryptString(
     String.fromCharCode(...privateKey),
     encryptionKey
   );
-  
+
   const identity: Identity = {
     id,
     publicKey,
     encryptedPrivateKey,
     salt,
   };
-  
+
   // Store identity securely
   await SecureStore.setItemAsync(IDENTITY_KEY, JSON.stringify(identity));
-  
-  return identity;
+
+  return { identity, masterKey: encryptionKey };
 }
 
 /**
@@ -51,27 +51,25 @@ export async function getIdentity(): Promise<Identity | null> {
 /**
  * Unlock identity by deriving master key
  */
-export async function unlockIdentity(password: string): Promise<boolean> {
+export async function unlockIdentity(password: string): Promise<number[] | null> {
   const identity = await getIdentity();
-  if (!identity) return false;
-  
+  if (!identity) return null;
+
   try {
     // Derive key with stored salt
     const { key } = await deriveMasterKey(password, identity.salt);
-    
+
     // Try to decrypt private key to verify password
     const decrypted = await decryptString(identity.encryptedPrivateKey, key);
-    
+
     if (decrypted) {
-      // Store master key in memory (not persisted) for quick access
-      // In production, use a more secure approach
-      return true;
+      return key;
     }
   } catch {
-    return false;
+    return null;
   }
-  
-  return false;
+
+  return null;
 }
 
 /**

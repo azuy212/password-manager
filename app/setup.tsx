@@ -17,7 +17,7 @@ export default function SetupScreen() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const router = useRouter();
-  const { setLoading, setAuthenticated } = useAppStore();
+  const { setLoading, setAuthenticated, setIdentity, setMasterKey, setUserId } = useAppStore();
 
   const handleCreate = async () => {
     if (!password.trim() || !confirmPassword.trim()) {
@@ -37,18 +37,12 @@ export default function SetupScreen() {
 
     setLoading(true);
     try {
-      const identity = await createIdentity(password);
+      const { identity, masterKey } = await createIdentity(password);
+      setIdentity(identity);
+      setMasterKey(masterKey);
+      setUserId(identity.id);
       setAuthenticated(true);
-      Alert.alert(
-        'Success',
-        'Your vault has been created. Remember your master password - it cannot be recovered!',
-        [
-          {
-            text: 'OK',
-            onPress: () => router.replace('/(tabs)'),
-          },
-        ]
-      );
+      router.replace('/(tabs)');
     } catch (error: any) {
       Alert.alert('Error', error.message);
     } finally {

@@ -1,8 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { v4 as uuidv4 } from 'uuid';
+import { uuidv4 } from '../../utils/uuid';
 
 import type { Vault, VaultEntry, VaultEntryInput, VaultInput } from '../../types/vault';
-import { encryptString, decryptString } from '../crypto';
 
 const VAULTS_KEY = 'vaults';
 const ENTRIES_KEY = 'vault_entries';
