@@ -14,11 +14,13 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import * as Clipboard from 'expo-clipboard';
 import { useTheme } from '@/hooks/useTheme';
 import { spacing, radius, typography } from '@/utils/themedStyles';
 import type { VaultEntry } from '@/types/vault';
 import { createEntry, updateEntry, deleteEntry } from '@/core/vault/vaultService';
 import { useAppStore } from '@/store/useAppStore';
+import { CopyableField } from '@/components/CopyableField';
 
 const ENTRY_LIST_WIDTH = 320;
 
@@ -339,10 +341,10 @@ export function VaultSplitView({
                 </>
               ) : (
                 <>
-                  <DetailField label="Username" value={formData.username} colors={colors} />
-                  <DetailField label="Password" value="••••••••••" colors={colors} isPassword />
-                  {formData.url && <DetailField label="URL" value={formData.url} colors={colors} />}
-                  {formData.notes && <DetailField label="Notes" value={formData.notes} colors={colors} isMultiline />}
+                  <CopyableField label="Username" value={formData.username} />
+                  <CopyableField label="Password" value={formData.password} isPassword />
+                  {formData.url && <CopyableField label="URL" value={formData.url} />}
+                  {formData.notes && <CopyableField label="Notes" value={formData.notes} isMultiline />}
                 </>
               )}
             </ScrollView>
@@ -416,6 +418,15 @@ function DetailPasswordInput({
   onTogglePassword: () => void;
   colors: ReturnType<typeof import('@/hooks/useTheme').useTheme>;
 }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    if (!value) return;
+    await Clipboard.setStringAsync(value);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
     <View style={{ marginBottom: spacing.md }}>
       <Text style={{ ...typography.captionMedium, color: colors.textSecondary, marginBottom: spacing.xs, marginLeft: spacing.xs }}>
@@ -428,7 +439,7 @@ function DetailPasswordInput({
             borderWidth: 1,
             borderColor: colors.inputBorder,
             padding: spacing.md,
-            paddingRight: 48,
+            paddingRight: 88,
             borderRadius: radius.md,
             color: colors.text,
             ...typography.body,
@@ -440,12 +451,36 @@ function DetailPasswordInput({
           secureTextEntry={!showPassword}
           autoCapitalize="none"
         />
-        <TouchableOpacity
-          style={{ position: 'absolute', right: spacing.md, top: '50%', marginTop: -11, padding: spacing.xs }}
-          onPress={onTogglePassword}
-        >
-          <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={20} color={colors.textTertiary} />
-        </TouchableOpacity>
+        <View style={{ position: 'absolute', right: spacing.sm, top: '50%', marginTop: -16, flexDirection: 'row', gap: 2 }}>
+          <TouchableOpacity
+            style={{
+              padding: spacing.xs,
+              borderRadius: radius.sm,
+              backgroundColor: copied ? (colors.success + '20') : colors.primaryMuted,
+            }}
+            onPress={handleCopy}
+            disabled={!value}
+          >
+            <Ionicons
+              name={copied ? 'checkmark' : 'copy-outline'}
+              size={16}
+              color={copied ? colors.success : colors.textTertiary}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={{
+              padding: spacing.xs,
+              borderRadius: radius.sm,
+            }}
+            onPress={onTogglePassword}
+          >
+            <Ionicons
+              name={showPassword ? 'eye-off' : 'eye'}
+              size={16}
+              color={colors.textTertiary}
+            />
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
@@ -488,42 +523,6 @@ function DetailTextarea({
         multiline
         numberOfLines={4}
       />
-    </View>
-  );
-}
-
-function DetailField({
-  label,
-  value,
-  colors,
-  isPassword,
-  isMultiline,
-}: {
-  label: string;
-  value: string;
-  colors: ReturnType<typeof import('@/hooks/useTheme').useTheme>;
-  isPassword?: boolean;
-  isMultiline?: boolean;
-}) {
-  return (
-    <View style={{ marginBottom: spacing.md }}>
-      <Text style={{ ...typography.captionMedium, color: colors.textSecondary, marginBottom: spacing.xs, marginLeft: spacing.xs }}>
-        {label}
-      </Text>
-      <View
-        style={{
-          backgroundColor: colors.inputBackground,
-          borderWidth: 1,
-          borderColor: colors.inputBorder,
-          padding: spacing.md,
-          borderRadius: radius.md,
-          minHeight: isMultiline ? 80 : undefined,
-        }}
-      >
-        <Text style={{ ...typography.body, color: colors.text, fontFamily: isPassword ? 'monospace' : undefined }}>
-          {value}
-        </Text>
-      </View>
     </View>
   );
 }

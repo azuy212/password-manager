@@ -1,27 +1,26 @@
-import React, { useState, useEffect } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
 import {
-  View,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  StyleSheet,
-  Alert,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
-  ActivityIndicator,
+  View,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useAppStore } from '../store/useAppStore';
-import { createEntry, updateEntry, getEntry, deleteEntry } from '../core/vault/vaultService';
-import type { VaultEntryInput } from '../types/vault';
-import { useTheme } from '../hooks/useTheme';
-import { spacing, radius, typography } from '../utils/themedStyles';
 import type { ThemeColors } from '../constants/Colors';
-import { PageContainer } from '../components/PageContainer';
-import { WebLayout } from '../components/WebLayout';
+import { createEntry, deleteEntry, getEntry, updateEntry } from '../core/vault/vaultService';
+import { useTheme } from '../hooks/useTheme';
+import { useAppStore } from '../store/useAppStore';
+import type { VaultEntryInput } from '../types/vault';
+import { radius, spacing, typography } from '../utils/themedStyles';
 
 export default function EntryScreen() {
   const params = useLocalSearchParams<{ vaultId: string; entryId?: string }>();
@@ -39,6 +38,14 @@ export default function EntryScreen() {
   const [isLoadingEntry, setIsLoadingEntry] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  const handleCopyField = async (value: string, field: string) => {
+    if (!value) return;
+    await Clipboard.setStringAsync(value);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(null), 2000);
+  };
 
   useEffect(() => {
     if (params.entryId) {
@@ -133,11 +140,10 @@ export default function EntryScreen() {
   const styles = createStyles(colors, insets);
 
   return (
-    <WebLayout>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.container}
-      >
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={styles.container}
+    >
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
@@ -171,27 +177,55 @@ export default function EntryScreen() {
 
         <View style={styles.formGroup}>
           <Text style={styles.label}>Title</Text>
-          <TextInput
-            style={[styles.input, isLoadingEntry && styles.inputDisabled]}
-            placeholder="e.g., Gmail"
-            value={title}
-            onChangeText={setTitle}
-            placeholderTextColor={colors.placeholder}
-            editable={!isLoadingEntry}
-          />
+          <View style={styles.inputWithIcon}>
+            <TextInput
+              style={[styles.inputWithIconField, isLoadingEntry && styles.inputDisabled]}
+              placeholder="e.g., Gmail"
+              value={title}
+              onChangeText={setTitle}
+              placeholderTextColor={colors.placeholder}
+              editable={!isLoadingEntry}
+            />
+            <TouchableOpacity
+              style={[styles.inputActionBtn, copiedField === 'title' && styles.inputActionBtnSuccess]}
+              onPress={() => handleCopyField(title, 'title')}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              disabled={isLoadingEntry || !title}
+            >
+              <Ionicons
+                name={copiedField === 'title' ? 'checkmark' : 'copy-outline'}
+                size={18}
+                color={copiedField === 'title' ? colors.success : colors.textTertiary}
+              />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={styles.formGroup}>
           <Text style={styles.label}>Username / Email</Text>
-          <TextInput
-            style={[styles.input, isLoadingEntry && styles.inputDisabled]}
-            placeholder="e.g., user@email.com"
-            value={username}
-            onChangeText={setUsername}
-            placeholderTextColor={colors.placeholder}
-            autoCapitalize="none"
-            editable={!isLoadingEntry}
-          />
+          <View style={styles.inputWithIcon}>
+            <TextInput
+              style={[styles.inputWithIconField, isLoadingEntry && styles.inputDisabled]}
+              placeholder="e.g., user@email.com"
+              value={username}
+              onChangeText={setUsername}
+              placeholderTextColor={colors.placeholder}
+              autoCapitalize="none"
+              editable={!isLoadingEntry}
+            />
+            <TouchableOpacity
+              style={[styles.inputActionBtn, copiedField === 'username' && styles.inputActionBtnSuccess]}
+              onPress={() => handleCopyField(username, 'username')}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              disabled={isLoadingEntry || !username}
+            >
+              <Ionicons
+                name={copiedField === 'username' ? 'checkmark' : 'copy-outline'}
+                size={18}
+                color={copiedField === 'username' ? colors.success : colors.textTertiary}
+              />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={styles.formGroup}>
@@ -208,48 +242,93 @@ export default function EntryScreen() {
               autoCapitalize="none"
               editable={!isLoadingEntry}
             />
+            <View style={styles.passwordActions}>
+              <TouchableOpacity
+                style={styles.passwordActionBtn}
+                onPress={() => setShowPassword(!showPassword)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                disabled={isLoadingEntry}
+              >
+                <Ionicons
+                  name={showPassword ? 'eye-off' : 'eye'}
+                  size={18}
+                  color={colors.textTertiary}
+                />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.passwordActionBtn,
+                  copiedField === 'password' && styles.passwordActionBtnSuccess,
+                ]}
+                onPress={() => handleCopyField(password, 'password')}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                disabled={isLoadingEntry || !password}
+              >
+                <Ionicons
+                  name={copiedField === 'password' ? 'checkmark' : 'copy-outline'}
+                  size={18}
+                  color={copiedField === 'password' ? colors.success : colors.textTertiary}
+                />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Website URL (optional)</Text>
+          <View style={styles.inputWithIcon}>
+            <TextInput
+              style={[styles.inputWithIconField, isLoadingEntry && styles.inputDisabled]}
+              placeholder="e.g., https://gmail.com"
+              value={url}
+              onChangeText={setUrl}
+              placeholderTextColor={colors.placeholder}
+              autoCapitalize="none"
+              keyboardType="url"
+              editable={!isLoadingEntry}
+            />
             <TouchableOpacity
-              style={styles.eyeButton}
-              onPress={() => setShowPassword(!showPassword)}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              disabled={isLoadingEntry}
+              style={[styles.inputActionBtn, copiedField === 'url' && styles.inputActionBtnSuccess]}
+              onPress={() => handleCopyField(url, 'url')}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              disabled={isLoadingEntry || !url}
             >
               <Ionicons
-                name={showPassword ? 'eye-off' : 'eye'}
-                size={22}
-                color={colors.textTertiary}
+                name={copiedField === 'url' ? 'checkmark' : 'copy-outline'}
+                size={18}
+                color={copiedField === 'url' ? colors.success : colors.textTertiary}
               />
             </TouchableOpacity>
           </View>
         </View>
 
         <View style={styles.formGroup}>
-          <Text style={styles.label}>Website URL (optional)</Text>
-          <TextInput
-            style={[styles.input, isLoadingEntry && styles.inputDisabled]}
-            placeholder="e.g., https://gmail.com"
-            value={url}
-            onChangeText={setUrl}
-            placeholderTextColor={colors.placeholder}
-            autoCapitalize="none"
-            keyboardType="url"
-            editable={!isLoadingEntry}
-          />
-        </View>
-
-        <View style={styles.formGroup}>
           <Text style={styles.label}>Notes (optional)</Text>
-          <TextInput
-            style={[styles.input, styles.notesInput, isLoadingEntry && styles.inputDisabled]}
-            placeholder="Add any additional notes..."
-            value={notes}
-            onChangeText={setNotes}
-            placeholderTextColor={colors.placeholder}
-            multiline
-            numberOfLines={4}
-            textAlignVertical="top"
-            editable={!isLoadingEntry}
-          />
+          <View style={styles.inputWithIconMultiline}>
+            <TextInput
+              style={[styles.inputWithIconField, styles.notesInput, isLoadingEntry && styles.inputDisabled]}
+              placeholder="Add any additional notes..."
+              value={notes}
+              onChangeText={setNotes}
+              placeholderTextColor={colors.placeholder}
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+              editable={!isLoadingEntry}
+            />
+            <TouchableOpacity
+              style={[styles.inputActionBtnMultiline, copiedField === 'notes' && styles.inputActionBtnSuccess]}
+              onPress={() => handleCopyField(notes, 'notes')}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              disabled={isLoadingEntry || !notes}
+            >
+              <Ionicons
+                name={copiedField === 'notes' ? 'checkmark' : 'copy-outline'}
+                size={18}
+                color={copiedField === 'notes' ? colors.success : colors.textTertiary}
+              />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {params.entryId && (
@@ -270,8 +349,7 @@ export default function EntryScreen() {
           </TouchableOpacity>
         )}
       </ScrollView>
-      </KeyboardAvoidingView>
-    </WebLayout>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -347,6 +425,39 @@ const createStyles = (colors: ThemeColors, insets: ReturnType<typeof useSafeArea
     inputDisabled: {
       opacity: 0.5,
     },
+    inputWithIcon: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.inputBackground,
+      borderWidth: 1,
+      borderColor: colors.inputBorder,
+      borderRadius: radius.md,
+    },
+    inputWithIconField: {
+      flex: 1,
+      padding: spacing.md,
+      paddingRight: 4,
+      color: colors.text,
+      ...typography.body,
+    },
+    inputActionBtn: {
+      padding: spacing.sm,
+      borderRadius: radius.sm,
+    },
+    inputActionBtnMultiline: {
+      position: 'absolute',
+      top: spacing.sm,
+      right: spacing.sm,
+      padding: spacing.xs,
+      borderRadius: radius.sm,
+      backgroundColor: colors.inputBackground,
+    },
+    inputActionBtnSuccess: {
+      backgroundColor: colors.success + '20',
+    },
+    inputWithIconMultiline: {
+      position: 'relative',
+    },
     passwordContainer: {
       position: 'relative',
     },
@@ -355,17 +466,25 @@ const createStyles = (colors: ThemeColors, insets: ReturnType<typeof useSafeArea
       borderWidth: 1,
       borderColor: colors.inputBorder,
       padding: spacing.md,
-      paddingRight: spacing.xl + spacing.md,
+      paddingRight: 80,
       borderRadius: radius.md,
       color: colors.text,
       ...typography.body,
     },
-    eyeButton: {
+    passwordActions: {
       position: 'absolute',
-      right: spacing.md,
+      right: spacing.xs,
       top: '50%',
-      marginTop: -11,
+      marginTop: -16,
+      flexDirection: 'row',
+      gap: 2,
+    },
+    passwordActionBtn: {
       padding: spacing.xs,
+      borderRadius: radius.sm,
+    },
+    passwordActionBtnSuccess: {
+      backgroundColor: colors.success + '20',
     },
     notesInput: {
       minHeight: 100,

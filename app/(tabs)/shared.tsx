@@ -4,7 +4,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/hooks/useTheme';
 import { spacing, typography } from '@/utils/themedStyles';
-import { PageContainer } from '@/components/PageContainer';
 import { WebLayout } from '@/components/WebLayout';
 
 export default function SharedScreen() {

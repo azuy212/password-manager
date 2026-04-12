@@ -18,8 +18,6 @@ import { useAppStore } from '../store/useAppStore';
 import { useTheme } from '../hooks/useTheme';
 import { spacing, radius, typography } from '../utils/themedStyles';
 import type { ThemeColors } from '../constants/Colors';
-import { PageContainer } from '../components/PageContainer';
-import { WebLayout } from '../components/WebLayout';
 
 export default function SetupScreen() {
   const [password, setPassword] = useState('');
@@ -73,11 +71,10 @@ export default function SetupScreen() {
   const styles = createStyles(colors, insets);
 
   return (
-    <WebLayout>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.container}
-      >
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={styles.container}
+    >
       <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
         {/* Shield Icon */}
         <View style={styles.iconContainer}>
@@ -124,8 +121,7 @@ export default function SetupScreen() {
           </Text>
         </View>
       </Animated.View>
-      </KeyboardAvoidingView>
-    </WebLayout>
+    </KeyboardAvoidingView>
   );
 }
 
