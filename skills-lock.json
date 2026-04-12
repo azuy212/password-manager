@@ -56,6 +56,11 @@
       "sourceType": "github",
       "computedHash": "3cd0ba91f359f9f84cd40f36f356287994a0e952520fac6e03ef7952d0397879"
     },
+    "react-native-best-practices": {
+      "source": "software-mansion-labs/skills",
+      "sourceType": "github",
+      "computedHash": "265c36081262430c0d1e45a114378c8d93ffec20f8adf4e461dff407581c3b86"
+    },
     "upgrading-expo": {
       "source": "expo/skills",
       "sourceType": "github",
