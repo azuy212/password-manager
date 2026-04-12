@@ -4,9 +4,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppStore } from '@/store/useAppStore';
 import { getVaults, createVault, deleteVault } from '@/core/vault/vaultService';
 import type { Vault } from '@/types/vault';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   Alert,
+  Animated,
   FlatList,
   Modal,
   StyleSheet,
@@ -14,15 +15,81 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  Animated,
   ActivityIndicator,
 } from 'react-native';
 import { useTheme } from '@/hooks/useTheme';
 import { spacing, radius, typography } from '@/utils/themedStyles';
 import type { ThemeColors } from '@/constants/Colors';
-import { LoadingOverlay } from '@/components/LoadingOverlay';
 import { InlineLoader } from '@/components/InlineLoader';
 import { WebLayout } from '@/components/WebLayout';
+
+// ─── Memoized Vault Item ───
+
+interface VaultItemProps {
+  item: Vault;
+  onPress: (vault: Vault) => void;
+  onLongPress: (vault: Vault) => void;
+  colors: ThemeColors;
+}
+
+const VaultItem = React.memo(function VaultItem({ item, onPress, onLongPress, colors }: VaultItemProps) {
+  return (
+    <TouchableOpacity
+      style={[
+        vaultItemStyles.item,
+        { backgroundColor: colors.surface, borderColor: colors.border },
+      ]}
+      onPress={() => onPress(item)}
+      onLongPress={() => onLongPress(item)}
+      activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={`Open vault ${item.name}`}
+      accessibilityHint="Long press to delete"
+    >
+      <View style={[vaultItemStyles.icon, { backgroundColor: colors.primaryMuted }]}>
+        <Ionicons name="folder" size={20} color={colors.primary} />
+      </View>
+      <View style={vaultItemStyles.info}>
+        <Text style={[vaultItemStyles.name, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
+        <Text style={[vaultItemStyles.date, { color: colors.textSecondary }]}>
+          {new Date(item.updatedAt).toLocaleDateString()}
+        </Text>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+    </TouchableOpacity>
+  );
+});
+
+const vaultItemStyles = StyleSheet.create({
+  item: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+  },
+  icon: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  info: {
+    flex: 1,
+    marginLeft: 16,
+  },
+  name: {
+    ...typography.bodyMedium,
+  },
+  date: {
+    ...typography.small,
+    marginTop: 2,
+  },
+});
+
+// ─── Main Screen ───
 
 export default function VaultsScreen() {
   const [vaults, setVaults] = useState<Vault[]>([]);
@@ -34,8 +101,10 @@ export default function VaultsScreen() {
   const { setVaults: setStoreVaults, masterKey } = useAppStore();
   const colors = useTheme();
   const insets = useSafeAreaInsets();
-  const modalScale = useState(new Animated.Value(0.9))[0];
-  const modalOpacity = useState(new Animated.Value(0))[0];
+
+  // Animated values — use useMemo to keep stable references
+  const modalScale = useMemo(() => new Animated.Value(0.9), []);
+  const modalOpacity = useMemo(() => new Animated.Value(0), []);
 
   const loadVaults = useCallback(async () => {
     setIsLoadingVaults(true);
@@ -43,8 +112,9 @@ export default function VaultsScreen() {
       const data = await getVaults();
       setVaults(data);
       setStoreVaults(data);
-    } catch (error: any) {
-      Alert.alert('Error', error.message);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to load vaults';
+      Alert.alert('Error', message);
     } finally {
       setIsLoadingVaults(false);
     }
@@ -56,7 +126,7 @@ export default function VaultsScreen() {
     }, [loadVaults])
   );
 
-  const handleCreateVault = () => {
+  const handleCreateVault = useCallback(() => {
     setNewVaultName('');
     setShowNewVaultModal(true);
     Animated.parallel([
@@ -72,9 +142,9 @@ export default function VaultsScreen() {
         useNativeDriver: true,
       }),
     ]).start();
-  };
+  }, [modalScale, modalOpacity]);
 
-  const closeModal = () => {
+  const closeModal = useCallback(() => {
     Animated.parallel([
       Animated.timing(modalScale, {
         toValue: 0.9,
@@ -89,9 +159,9 @@ export default function VaultsScreen() {
     ]).start(({ finished }) => {
       if (finished) setShowNewVaultModal(false);
     });
-  };
+  }, [modalScale, modalOpacity]);
 
-  const handleSaveVault = async () => {
+  const handleSaveVault = useCallback(async () => {
     if (!newVaultName.trim() || !masterKey) {
       closeModal();
       return;
@@ -109,15 +179,15 @@ export default function VaultsScreen() {
       );
       closeModal();
       loadVaults();
-    } catch (error: any) {
+    } catch {
       Alert.alert('Error', 'Failed to create vault');
       closeModal();
     } finally {
       setIsCreatingVault(false);
     }
-  };
+  }, [newVaultName, masterKey, isCreatingVault, closeModal, loadVaults]);
 
-  const handleDeleteVault = (vault: Vault) => {
+  const handleDeleteVault = useCallback((vault: Vault) => {
     Alert.alert(
       'Delete Vault',
       `Are you sure you want to delete "${vault.name}"? All entries will be deleted.`,
@@ -130,129 +200,129 @@ export default function VaultsScreen() {
             try {
               await deleteVault(vault.id);
               loadVaults();
-            } catch (error: any) {
-              Alert.alert('Error', error.message);
+            } catch (error: unknown) {
+              const message = error instanceof Error ? error.message : 'Failed to delete vault';
+              Alert.alert('Error', message);
             }
           },
         },
       ]
     );
-  };
+  }, [loadVaults]);
 
-  const handleOpenVault = (vault: Vault) => {
+  const handleOpenVault = useCallback((vault: Vault) => {
     router.push({
       pathname: '/vault',
       params: { vaultId: vault.id, vaultName: vault.name },
     });
-  };
+  }, [router]);
 
-  const styles = createStyles(colors, insets);
+  const styles = useMemo(
+    () => createStyles(colors, insets),
+    [colors, insets],
+  );
 
-  const renderItem = ({ item }: { item: Vault }) => (
-    <TouchableOpacity
-      style={styles.vaultItem}
-      onPress={() => handleOpenVault(item)}
-      onLongPress={() => handleDeleteVault(item)}
-      activeOpacity={0.7}
-    >
-      <View style={styles.vaultIcon}>
-        <Ionicons name="folder" size={20} color={colors.primary} />
-      </View>
-      <View style={styles.vaultInfo}>
-        <Text style={styles.vaultName} numberOfLines={1}>{item.name}</Text>
-        <Text style={styles.vaultDate}>
-          {new Date(item.updatedAt).toLocaleDateString()}
-        </Text>
-      </View>
-      <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-    </TouchableOpacity>
+  const renderItem = useCallback(
+    ({ item }: { item: Vault }) => (
+      <VaultItem item={item} onPress={handleOpenVault} onLongPress={handleDeleteVault} colors={colors} />
+    ),
+    [handleOpenVault, handleDeleteVault, colors],
   );
 
   return (
     <WebLayout>
       <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>My Vaults</Text>
-        <Text style={styles.headerSubtitle}>
-          {vaults.length} {vaults.length === 1 ? 'vault' : 'vaults'}
-        </Text>
-      </View>
-
-      <FlatList
-        data={vaults}
-        keyExtractor={(item) => item.id}
-        renderItem={renderItem}
-        contentContainerStyle={styles.list}
-        ListEmptyComponent={
-          isLoadingVaults ? (
-            <InlineLoader />
-          ) : (
-            <View style={styles.empty}>
-              <Ionicons name="folder-open-outline" size={64} color={colors.textTertiary} />
-              <Text style={styles.emptyText}>No vaults yet</Text>
-              <Text style={styles.emptySubtext}>
-                Tap + to create your first vault
-              </Text>
-            </View>
-          )
-        }
-      />
-
-      {/* FAB */}
-      <TouchableOpacity 
-        style={styles.fab} 
-        onPress={handleCreateVault}
-        activeOpacity={0.85}
-      >
-        <Ionicons name="add" size={28} color={colors.textInverse} />
-      </TouchableOpacity>
-
-      {/* New Vault Modal */}
-      <Modal visible={showNewVaultModal} transparent animationType="none">
-        <View style={styles.modalOverlay}>
-          <Animated.View 
-            style={[
-              styles.modalContent, 
-              { 
-                opacity: modalOpacity,
-                transform: [{ scale: modalScale }],
-              }
-            ]}
-          >
-            <Text style={styles.modalTitle}>New Vault</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Enter vault name"
-              placeholderTextColor={colors.placeholder}
-              value={newVaultName}
-              onChangeText={setNewVaultName}
-              autoFocus
-              returnKeyType="done"
-              onSubmitEditing={handleSaveVault}
-            />
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonCancel]}
-                onPress={closeModal}
-              >
-                <Text style={styles.modalButtonTextCancel}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonCreate]}
-                onPress={handleSaveVault}
-                disabled={isCreatingVault}
-              >
-                {isCreatingVault ? (
-                  <ActivityIndicator size="small" color={colors.textInverse} />
-                ) : (
-                  <Text style={styles.modalButtonTextCreate}>Create</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </Animated.View>
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>My Vaults</Text>
+          <Text style={styles.headerSubtitle}>
+            {vaults.length} {vaults.length === 1 ? 'vault' : 'vaults'}
+          </Text>
         </View>
-      </Modal>
+
+        <FlatList
+          data={vaults}
+          keyExtractor={(item) => item.id}
+          renderItem={renderItem}
+          contentContainerStyle={styles.list}
+          removeClippedSubviews
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          ListEmptyComponent={
+            isLoadingVaults ? (
+              <InlineLoader />
+            ) : (
+              <View style={styles.empty}>
+                <Ionicons name="folder-open-outline" size={64} color={colors.textTertiary} />
+                <Text style={styles.emptyText}>No vaults yet</Text>
+                <Text style={styles.emptySubtext}>
+                  Tap + to create your first vault
+                </Text>
+              </View>
+            )
+          }
+        />
+
+        {/* FAB */}
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={handleCreateVault}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel="Create new vault"
+        >
+          <Ionicons name="add" size={28} color={colors.textInverse} />
+        </TouchableOpacity>
+
+        {/* New Vault Modal */}
+        <Modal visible={showNewVaultModal} transparent animationType="none">
+          <View style={styles.modalOverlay}>
+            <Animated.View
+              style={[
+                styles.modalContent,
+                {
+                  opacity: modalOpacity,
+                  transform: [{ scale: modalScale }],
+                }
+              ]}
+            >
+              <Text style={styles.modalTitle}>New Vault</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="Enter vault name"
+                placeholderTextColor={colors.placeholder}
+                value={newVaultName}
+                onChangeText={setNewVaultName}
+                autoFocus
+                returnKeyType="done"
+                onSubmitEditing={handleSaveVault}
+              />
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.modalButtonCancel]}
+                  onPress={closeModal}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel"
+                >
+                  <Text style={styles.modalButtonTextCancel}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.modalButtonCreate]}
+                  onPress={handleSaveVault}
+                  disabled={isCreatingVault}
+                  accessibilityRole="button"
+                  accessibilityLabel="Create vault"
+                >
+                  {isCreatingVault ? (
+                    <ActivityIndicator size="small" color={colors.textInverse} />
+                  ) : (
+                    <Text style={styles.modalButtonTextCreate}>Create</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </Animated.View>
+          </View>
+        </Modal>
       </View>
     </WebLayout>
   );
@@ -283,37 +353,6 @@ const createStyles = (colors: ThemeColors, insets: ReturnType<typeof useSafeArea
     },
     list: {
       padding: spacing.md,
-    },
-    vaultItem: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      padding: spacing.md,
-      backgroundColor: colors.surface,
-      borderRadius: radius.md,
-      marginBottom: spacing.sm,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    vaultIcon: {
-      width: 40,
-      height: 40,
-      borderRadius: radius.sm,
-      backgroundColor: colors.primaryMuted,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    vaultInfo: {
-      flex: 1,
-      marginLeft: spacing.md,
-    },
-    vaultName: {
-      ...typography.bodyMedium,
-      color: colors.text,
-    },
-    vaultDate: {
-      ...typography.small,
-      color: colors.textSecondary,
-      marginTop: 2,
     },
     empty: {
       alignItems: 'center',

@@ -1,6 +1,6 @@
 import { secureStorage } from '@/utils/secureStorage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Crypto from 'expo-crypto';
+import { uuidv4 } from '@/utils/uuid';
 
 import CryptoNative from 'crypto-native';
 import { deriveMasterKey, encryptString, decryptString, SecureKey } from '@/core/crypto';
@@ -19,7 +19,7 @@ const ENTRIES_KEY = 'vault_entries';
  * Create a new identity with keypair
  */
 export async function createIdentity(password: string): Promise<{ identity: Identity; masterKey: SecureKey }> {
-  const id = Crypto.randomUUID();
+  const id = uuidv4();
 
   // Generate keypair
   const { privateKey, publicKey } = await CryptoNative.generateKeyPair();
@@ -117,11 +117,30 @@ export async function hasIdentity(): Promise<boolean> {
  * Clear identity AND all vault data (full reset)
  */
 export async function clearIdentity(): Promise<void> {
+  const errors: Error[] = [];
+
   // Clear SecureStore
-  await secureStorage.deleteItem(IDENTITY_KEY);
-  await secureStorage.deleteItem(ATTEMPT_COUNT_KEY);
+  try {
+    await secureStorage.deleteItem(IDENTITY_KEY);
+  } catch (e) {
+    errors.push(e instanceof Error ? e : new Error('Failed to clear identity'));
+  }
+  try {
+    await secureStorage.deleteItem(ATTEMPT_COUNT_KEY);
+  } catch (e) {
+    errors.push(e instanceof Error ? e : new Error('Failed to clear attempts'));
+  }
+
   // Clear AsyncStorage (vaults & entries)
-  await AsyncStorage.multiRemove([VAULTS_KEY, ENTRIES_KEY]);
+  try {
+    await AsyncStorage.multiRemove([VAULTS_KEY, ENTRIES_KEY]);
+  } catch (e) {
+    errors.push(e instanceof Error ? e : new Error('Failed to clear vault data'));
+  }
+
+  if (errors.length > 0) {
+    console.error('clearIdentity encountered errors:', errors.map(e => e.message).join(', '));
+  }
 }
 
 /**

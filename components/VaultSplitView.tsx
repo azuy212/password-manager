@@ -379,20 +379,17 @@ function DetailInput({
   keyboardType?: 'default' | 'url';
 }) {
   return (
-    <View style={{ marginBottom: spacing.md }}>
-      <Text style={{ ...typography.captionMedium, color: colors.textSecondary, marginBottom: spacing.xs, marginLeft: spacing.xs }}>
-        {label}
-      </Text>
+    <View style={detailStyles.container}>
+      <Text style={[detailStyles.label, { color: colors.textSecondary }]}>{label}</Text>
       <TextInput
-        style={{
-          backgroundColor: colors.inputBackground,
-          borderWidth: 1,
-          borderColor: colors.inputBorder,
-          padding: spacing.md,
-          borderRadius: radius.md,
-          color: colors.text,
-          ...typography.body,
-        }}
+        style={[
+          detailStyles.input,
+          {
+            backgroundColor: colors.inputBackground,
+            borderColor: colors.inputBorder,
+            color: colors.text,
+          },
+        ]}
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
@@ -428,22 +425,18 @@ function DetailPasswordInput({
   };
 
   return (
-    <View style={{ marginBottom: spacing.md }}>
-      <Text style={{ ...typography.captionMedium, color: colors.textSecondary, marginBottom: spacing.xs, marginLeft: spacing.xs }}>
-        {label}
-      </Text>
-      <View style={{ position: 'relative' }}>
+    <View style={detailStyles.container}>
+      <Text style={[detailStyles.label, { color: colors.textSecondary }]}>{label}</Text>
+      <View style={detailStyles.passwordWrapper}>
         <TextInput
-          style={{
-            backgroundColor: colors.inputBackground,
-            borderWidth: 1,
-            borderColor: colors.inputBorder,
-            padding: spacing.md,
-            paddingRight: 88,
-            borderRadius: radius.md,
-            color: colors.text,
-            ...typography.body,
-          }}
+          style={[
+            detailStyles.passwordInput,
+            {
+              backgroundColor: colors.inputBackground,
+              borderColor: colors.inputBorder,
+              color: colors.text,
+            },
+          ]}
           value={value}
           onChangeText={onChangeText}
           placeholder="Enter password"
@@ -451,15 +444,16 @@ function DetailPasswordInput({
           secureTextEntry={!showPassword}
           autoCapitalize="none"
         />
-        <View style={{ position: 'absolute', right: spacing.sm, top: '50%', marginTop: -16, flexDirection: 'row', gap: 2 }}>
+        <View style={detailStyles.passwordActions}>
           <TouchableOpacity
-            style={{
-              padding: spacing.xs,
-              borderRadius: radius.sm,
-              backgroundColor: copied ? (colors.success + '20') : colors.primaryMuted,
-            }}
+            style={[
+              detailStyles.passwordActionBtn,
+              { backgroundColor: copied ? (colors.success + '20') : colors.primaryMuted },
+            ]}
             onPress={handleCopy}
             disabled={!value}
+            accessibilityRole="button"
+            accessibilityLabel="Copy password"
           >
             <Ionicons
               name={copied ? 'checkmark' : 'copy-outline'}
@@ -468,11 +462,10 @@ function DetailPasswordInput({
             />
           </TouchableOpacity>
           <TouchableOpacity
-            style={{
-              padding: spacing.xs,
-              borderRadius: radius.sm,
-            }}
+            style={detailStyles.passwordActionBtn}
             onPress={onTogglePassword}
+            accessibilityRole="button"
+            accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
           >
             <Ionicons
               name={showPassword ? 'eye-off' : 'eye'}
@@ -500,22 +493,17 @@ function DetailTextarea({
   colors: ReturnType<typeof import('@/hooks/useTheme').useTheme>;
 }) {
   return (
-    <View style={{ marginBottom: spacing.md }}>
-      <Text style={{ ...typography.captionMedium, color: colors.textSecondary, marginBottom: spacing.xs, marginLeft: spacing.xs }}>
-        {label}
-      </Text>
+    <View style={detailStyles.container}>
+      <Text style={[detailStyles.label, { color: colors.textSecondary }]}>{label}</Text>
       <TextInput
-        style={{
-          backgroundColor: colors.inputBackground,
-          borderWidth: 1,
-          borderColor: colors.inputBorder,
-          padding: spacing.md,
-          borderRadius: radius.md,
-          color: colors.text,
-          ...typography.body,
-          minHeight: 100,
-          textAlignVertical: 'top',
-        }}
+        style={[
+          detailStyles.textarea,
+          {
+            backgroundColor: colors.inputBackground,
+            borderColor: colors.inputBorder,
+            color: colors.text,
+          },
+        ]}
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
@@ -526,6 +514,53 @@ function DetailTextarea({
     </View>
   );
 }
+
+const detailStyles = StyleSheet.create({
+  container: {
+    marginBottom: spacing.md,
+  },
+  label: {
+    ...typography.captionMedium,
+    marginBottom: spacing.xs,
+    marginLeft: spacing.xs,
+  },
+  input: {
+    borderWidth: 1,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    ...typography.body,
+  },
+  textarea: {
+    borderWidth: 1,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    minHeight: 100,
+    textAlignVertical: 'top',
+    ...typography.body,
+  },
+  passwordWrapper: {
+    position: 'relative',
+  },
+  passwordInput: {
+    borderWidth: 1,
+    padding: spacing.md,
+    paddingRight: 88,
+    borderRadius: radius.md,
+    ...typography.body,
+  },
+  passwordActions: {
+    position: 'absolute',
+    right: spacing.sm,
+    top: '50%',
+    marginTop: -16,
+    flexDirection: 'row',
+    gap: 2,
+  },
+  passwordActionBtn: {
+    padding: spacing.xs,
+    borderRadius: radius.sm,
+  },
+});
 
 function createStyles(colors: ReturnType<typeof useTheme>, insets: ReturnType<typeof useSafeAreaInsets>) {
   return StyleSheet.create({

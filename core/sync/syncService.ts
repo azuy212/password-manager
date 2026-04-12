@@ -1,6 +1,6 @@
 import { supabase } from '../../services/supabaseClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Crypto from 'expo-crypto';
+import { uuidv4 } from '@/utils/uuid';
 
 import type { Vault, VaultEntry } from '../../types/vault';
 import { getVaults, getEntriesForVault } from '../vault/vaultService';
@@ -15,7 +15,7 @@ const LAST_SYNC_KEY = 'last_sync';
 export async function getDeviceId(): Promise<string> {
   let deviceId = await AsyncStorage.getItem(DEVICE_ID_KEY);
   if (!deviceId) {
-    deviceId = Crypto.randomUUID();
+    deviceId = uuidv4();
     await AsyncStorage.setItem(DEVICE_ID_KEY, deviceId);
   }
   return deviceId;

@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -10,18 +10,74 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useWindowDimensions, Platform } from 'react-native';
 import { getEntriesForVault } from '../core/vault/vaultService';
 import { useAppStore } from '../store/useAppStore';
 import type { VaultEntry } from '../types/vault';
 import { useTheme } from '../hooks/useTheme';
+import { useIsDesktop } from '../hooks/useBreakpoint';
 import { spacing, radius, typography } from '../utils/themedStyles';
 import type { ThemeColors } from '../constants/Colors';
 import { InlineLoader } from '../components/InlineLoader';
 import { WebLayout } from '../components/WebLayout';
 import { VaultSplitView } from '../components/VaultSplitView';
 
-const DESKTOP_MIN = 1024;
+// ─── Static base styles for VaultEntryItem ───
+
+const vaultEntryItemBase = StyleSheet.create({
+  entryItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+  },
+  entryIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  entryInfo: {
+    flex: 1,
+    marginLeft: 16,
+  },
+  entryTitle: {
+    ...typography.bodyMedium,
+  },
+  entryUsername: {
+    ...typography.small,
+    marginTop: 2,
+  },
+});
+
+interface VaultEntryItemProps {
+  item: VaultEntry;
+  onPress: (entry: VaultEntry) => void;
+  colors: ThemeColors;
+}
+
+const VaultEntryItem = React.memo(function VaultEntryItem({ item, onPress, colors }: VaultEntryItemProps) {
+  return (
+    <TouchableOpacity
+      style={[vaultEntryItemBase.entryItem, { backgroundColor: colors.surface, borderColor: colors.border }]}
+      onPress={() => onPress(item)}
+      activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={`View entry for ${item.title}`}
+    >
+      <View style={[vaultEntryItemBase.entryIcon, { backgroundColor: colors.primaryMuted }]}>
+        <Ionicons name="key" size={20} color={colors.primary} />
+      </View>
+      <View style={vaultEntryItemBase.entryInfo}>
+        <Text style={[vaultEntryItemBase.entryTitle, { color: colors.text }]} numberOfLines={1}>{item.title}</Text>
+        <Text style={[vaultEntryItemBase.entryUsername, { color: colors.textSecondary }]} numberOfLines={1}>{item.username}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+    </TouchableOpacity>
+  );
+});
 
 export default function VaultScreen() {
   const params = useLocalSearchParams<{ vaultId: string; vaultName: string }>();
@@ -31,14 +87,15 @@ export default function VaultScreen() {
   const { masterKey } = useAppStore();
   const colors = useTheme();
   const insets = useSafeAreaInsets();
+  const isDesktop = useIsDesktop();
 
   const loadEntries = useCallback(async () => {
     if (!params.vaultId || !masterKey) return;
     setIsLoading(true);
     try {
-      const data = await getEntriesForVault(params.vaultId, masterKey);
+      const data = await getEntriesForVault(params.vaultId as string, masterKey);
       setEntries(data);
-    } catch (error: any) {
+    } catch {
       Alert.alert('Error', 'Failed to load entries');
     } finally {
       setIsLoading(false);
@@ -51,48 +108,40 @@ export default function VaultScreen() {
     }, [loadEntries])
   );
 
-  const handleAddEntry = () => {
+  const handleAddEntry = useCallback(() => {
     router.push({
       pathname: '/entry',
       params: { vaultId: params.vaultId },
     });
-  };
+  }, [router, params.vaultId]);
 
-  const handleEditEntry = (entry: VaultEntry) => {
+  const handleEditEntry = useCallback((entry: VaultEntry) => {
     router.push({
       pathname: '/entry',
       params: { vaultId: params.vaultId, entryId: entry.id },
     });
-  };
+  }, [router, params.vaultId]);
 
-  const styles = createStyles(colors, insets);
-
-  const renderItem = ({ item }: { item: VaultEntry }) => (
-    <TouchableOpacity
-      style={styles.entryItem}
-      onPress={() => handleEditEntry(item)}
-      activeOpacity={0.7}
-    >
-      <View style={styles.entryIcon}>
-        <Ionicons name="key" size={20} color={colors.primary} />
-      </View>
-      <View style={styles.entryInfo}>
-        <Text style={styles.entryTitle} numberOfLines={1}>{item.title}</Text>
-        <Text style={styles.entryUsername} numberOfLines={1}>{item.username}</Text>
-      </View>
-      <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-    </TouchableOpacity>
+  const styles = useMemo(
+    () => createStyles(colors, insets),
+    [colors, insets],
   );
 
-  const { width } = useWindowDimensions();
-  const isDesktop = width >= DESKTOP_MIN;
+  const renderItem = useCallback(
+    ({ item }: { item: VaultEntry }) => (
+      <VaultEntryItem item={item} onPress={handleEditEntry} colors={colors} />
+    ),
+    [handleEditEntry, colors],
+  );
+
+  const vaultName = (params.vaultName as string) ?? '';
 
   return (
     <WebLayout>
       {isDesktop ? (
         <VaultSplitView
           vaultId={params.vaultId as string}
-          vaultName={params.vaultName as string}
+          vaultName={vaultName}
           entries={entries}
           isLoading={isLoading}
           onAddEntry={loadEntries}
@@ -101,7 +150,7 @@ export default function VaultScreen() {
         <View style={styles.container}>
           {/* Vault Header */}
           <View style={styles.vaultHeader}>
-            <Text style={styles.title} numberOfLines={1}>{params.vaultName}</Text>
+            <Text style={styles.title} numberOfLines={1}>{vaultName}</Text>
             <Text style={styles.entryCount}>
               {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
             </Text>
@@ -112,6 +161,9 @@ export default function VaultScreen() {
             keyExtractor={(item) => item.id}
             renderItem={renderItem}
             contentContainerStyle={styles.list}
+            removeClippedSubviews
+            maxToRenderPerBatch={10}
+            windowSize={5}
             ListEmptyComponent={
               isLoading ? (
                 <InlineLoader />
@@ -132,6 +184,8 @@ export default function VaultScreen() {
             style={styles.fab}
             onPress={handleAddEntry}
             activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="Add new entry"
           >
             <Ionicons name="add" size={28} color={colors.textInverse} />
           </TouchableOpacity>

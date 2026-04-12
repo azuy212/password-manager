@@ -1,15 +1,30 @@
 import { ThemeProvider, DefaultTheme } from '@react-navigation/native';
-import { Stack } from 'expo-router';
+import { Stack, useRouter, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useColorScheme } from 'react-native';
 import Colors from '@/constants/Colors';
+import { useAutoLock } from '@/core/security/useAutoLock';
 
 export { ErrorBoundary } from 'expo-router';
 
 export const unstable_settings = {
   initialRouteName: 'index',
 };
+
+function AutoLockGuard() {
+  const router = useRouter();
+  const pathname = usePathname();
+
+  useAutoLock(() => {
+    // Only navigate away if not already on the unlock screen
+    if (pathname !== '/' && pathname !== '/setup') {
+      router.replace('/' as any);
+    }
+  });
+
+  return null;
+}
 
 export default function RootLayout() {
   const colorScheme = useColorScheme() ?? 'dark';
@@ -31,6 +46,7 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <ThemeProvider value={navigationTheme}>
+        <AutoLockGuard />
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="index" />
           <Stack.Screen name="setup" />

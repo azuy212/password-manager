@@ -1,11 +1,20 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Crypto from 'expo-crypto';
 
+import { uuidv4 } from '@/utils/uuid';
 import type { Vault, VaultEntry, VaultEntryInput, VaultInput } from '../../types/vault';
 import { encryptString, decryptString, SecureKey } from '../crypto';
 
 const VAULTS_KEY = 'vaults';
 const ENTRIES_KEY = 'vault_entries';
+
+/** Raw encrypted entry as stored in AsyncStorage */
+interface VaultEntryRaw {
+  id: string;
+  vaultId: string;
+  encryptedPayload: string;
+  createdAt: number;
+  updatedAt: number;
+}
 
 // Mutex for thread-safe AsyncStorage operations
 let asyncLock = Promise.resolve();
@@ -77,7 +86,7 @@ export async function createVault(input: VaultInput, masterKey: SecureKey): Prom
 
     const newVault: Vault = {
       ...input,
-      id: Crypto.randomUUID(),
+      id: uuidv4(),
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -101,7 +110,7 @@ export async function deleteVault(vaultId: string): Promise<void> {
     // Delete all entries in the vault
     const stored = await AsyncStorage.getItem(ENTRIES_KEY);
     if (stored) {
-      const entries: any[] = JSON.parse(stored);
+      const entries: VaultEntryRaw[] = JSON.parse(stored);
       const filtered = entries.filter(e => e.vaultId !== vaultId);
       await AsyncStorage.setItem(ENTRIES_KEY, JSON.stringify(filtered));
     }
@@ -115,7 +124,7 @@ export async function getEntriesForVault(vaultId: string, masterKey: SecureKey):
   const stored = await AsyncStorage.getItem(ENTRIES_KEY);
   if (!stored) return [];
 
-  const entries: any[] = JSON.parse(stored);
+  const entries: VaultEntryRaw[] = JSON.parse(stored);
   const vaultEntries = entries.filter(e => e.vaultId === vaultId);
 
   if (!masterKey) return [];
@@ -144,13 +153,13 @@ export async function getEntriesForVault(vaultId: string, masterKey: SecureKey):
 export async function createEntry(input: VaultEntryInput, masterKey: SecureKey): Promise<VaultEntry> {
   return withLock(async () => {
     const stored = await AsyncStorage.getItem(ENTRIES_KEY);
-    const entries: any[] = stored ? JSON.parse(stored) : [];
+    const entries: VaultEntryRaw[] = stored ? JSON.parse(stored) : [];
 
     const now = Date.now();
     const encryptedPayload = await encryptEntryContent(input, masterKey);
 
     const newEntry = {
-      id: Crypto.randomUUID(),
+      id: uuidv4(),
       vaultId: input.vaultId,
       encryptedPayload,
       createdAt: now,
@@ -184,7 +193,7 @@ export async function updateEntry(
     const stored = await AsyncStorage.getItem(ENTRIES_KEY);
     if (!stored) return null;
 
-    const entries: any[] = JSON.parse(stored);
+    const entries: VaultEntryRaw[] = JSON.parse(stored);
     const index = entries.findIndex(e => e.id === entryId);
     if (index === -1) return null;
 
@@ -234,7 +243,7 @@ export async function deleteEntry(entryId: string): Promise<void> {
     const stored = await AsyncStorage.getItem(ENTRIES_KEY);
     if (!stored) return;
 
-    const entries: any[] = JSON.parse(stored);
+    const entries: VaultEntryRaw[] = JSON.parse(stored);
     const filtered = entries.filter(e => e.id !== entryId);
     await AsyncStorage.setItem(ENTRIES_KEY, JSON.stringify(filtered));
   });
@@ -247,7 +256,7 @@ export async function getEntry(entryId: string, masterKey: SecureKey): Promise<V
   const stored = await AsyncStorage.getItem(ENTRIES_KEY);
   if (!stored || !masterKey) return null;
 
-  const entries: any[] = JSON.parse(stored);
+  const entries: VaultEntryRaw[] = JSON.parse(stored);
   const entry = entries.find(e => e.id === entryId);
   if (!entry) return null;
 

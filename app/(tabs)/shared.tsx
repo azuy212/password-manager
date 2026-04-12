@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,7 +9,10 @@ import { WebLayout } from '@/components/WebLayout';
 export default function SharedScreen() {
   const colors = useTheme();
   const insets = useSafeAreaInsets();
-  const styles = createStyles(colors, insets);
+  const styles = useMemo(
+    () => createStyles(colors, insets),
+    [colors, insets],
+  );
 
   return (
     <WebLayout>

@@ -7,14 +7,24 @@ const DEFAULT_LOCK_TIMEOUT = 5 * 60 * 1000; // 5 minutes
 /**
  * Hook to automatically lock app after inactivity
  * Locks on both background AND foreground inactivity
+ *
+ * @param onLock — Optional callback called when lock triggers (e.g. navigation)
+ * @param timeoutMs — Inactivity timeout in milliseconds
  */
-export function useAutoLock(timeoutMs: number = DEFAULT_LOCK_TIMEOUT) {
+export function useAutoLock(
+  onLock?: () => void,
+  timeoutMs: number = DEFAULT_LOCK_TIMEOUT,
+) {
   const appStateRef = useRef(AppState.currentState);
-  // @ts-ignore - Type inference issue
   const { lock: lockApp } = useAppStore();
   const backgroundTime = useRef<number | null>(null);
   const inactivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastActivity = useRef(Date.now());
+
+  const handleLock = useCallback(() => {
+    lockApp();
+    onLock?.();
+  }, [lockApp, onLock]);
 
   const resetInactivityTimer = useCallback(() => {
     lastActivity.current = Date.now();
@@ -26,10 +36,10 @@ export function useAutoLock(timeoutMs: number = DEFAULT_LOCK_TIMEOUT) {
     inactivityTimer.current = setTimeout(() => {
       const elapsed = Date.now() - lastActivity.current;
       if (elapsed >= timeoutMs) {
-        lockApp();
+        handleLock();
       }
     }, timeoutMs);
-  }, [timeoutMs, lockApp]);
+  }, [timeoutMs, handleLock]);
 
   const handleAppStateChange = useCallback(
     (nextAppState: AppStateStatus) => {
@@ -43,7 +53,7 @@ export function useAutoLock(timeoutMs: number = DEFAULT_LOCK_TIMEOUT) {
       } else if (nextAppState === 'active' && backgroundTime.current) {
         const elapsed = Date.now() - backgroundTime.current;
         if (elapsed >= timeoutMs) {
-          lockApp();
+          handleLock();
         }
         backgroundTime.current = null;
         // Reset inactivity timer when returning to foreground
@@ -52,7 +62,7 @@ export function useAutoLock(timeoutMs: number = DEFAULT_LOCK_TIMEOUT) {
 
       appStateRef.current = nextAppState;
     },
-    [timeoutMs, lockApp, resetInactivityTimer]
+    [timeoutMs, handleLock, resetInactivityTimer]
   );
 
   useEffect(() => {
@@ -69,5 +79,5 @@ export function useAutoLock(timeoutMs: number = DEFAULT_LOCK_TIMEOUT) {
     };
   }, [handleAppStateChange, resetInactivityTimer]);
 
-  return { lock: lockApp, resetInactivityTimer };
+  return { lock: handleLock, resetInactivityTimer };
 }

@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBreakpoint } from '@/hooks/useBreakpoint';
 import { useTheme } from '@/hooks/useTheme';
 import { Sidebar } from '@/components/Sidebar';
+import { useAppStore } from '@/store/useAppStore';
 
 type WebLayoutProps = {
   children: React.ReactNode;
@@ -14,10 +15,12 @@ export function WebLayout({ children }: WebLayoutProps) {
   const breakpoint = useBreakpoint();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { lock } = useAppStore();
 
   const isDesktop = breakpoint === 'desktop';
 
   const handleLock = () => {
+    lock();
     router.replace('/' as any);
   };
 

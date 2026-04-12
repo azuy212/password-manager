@@ -2,10 +2,38 @@ import { supabase } from '../../services/supabaseClient';
 import CryptoNative from 'crypto-native';
 
 import { encryptString } from '../crypto';
+import type { Database } from '../../services/supabaseClient';
 
 export interface ShareResult {
   success: boolean;
   error?: string;
+}
+
+export interface SharedEntryWithVaultEntry {
+  id: string;
+  entry_id: string;
+  owner_id: string;
+  shared_with_id: string;
+  encrypted_key: string;
+  vault_entries: {
+    id: string;
+    title: string;
+    username: string;
+    encrypted_password: string;
+    encrypted_notes: string | null;
+    url: string | null;
+  } | null;
+}
+
+export interface SharedEntryWithUser {
+  id: string;
+  entry_id: string;
+  owner_id: string;
+  shared_with_id: string;
+  encrypted_key: string;
+  users: {
+    email: string;
+  } | null;
 }
 
 /**
@@ -75,7 +103,7 @@ export async function shareEntry(
 /**
  * Get entries shared with current user
  */
-export async function getSharedWithMe(userId: string): Promise<any[]> {
+export async function getSharedWithMe(userId: string): Promise<SharedEntryWithVaultEntry[]> {
   const { data, error } = await supabase
     .from('shared_entries')
     .select(`
@@ -102,7 +130,7 @@ export async function getSharedWithMe(userId: string): Promise<any[]> {
 /**
  * Get entries shared by current user
  */
-export async function getSharedByMe(userId: string): Promise<any[]> {
+export async function getSharedByMe(userId: string): Promise<SharedEntryWithUser[]> {
   const { data, error } = await supabase
     .from('shared_entries')
     .select(`

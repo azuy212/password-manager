@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -65,7 +65,7 @@ export default function EntryScreen() {
         setNotes(entry.notes || '');
         setUrl(entry.url || '');
       }
-    } catch (error: any) {
+    } catch {
       Alert.alert('Error', 'Failed to load entry');
     } finally {
       setIsLoadingEntry(false);
@@ -103,8 +103,9 @@ export default function EntryScreen() {
       }
 
       router.back();
-    } catch (error: any) {
-      Alert.alert('Error', error.message);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to save entry';
+      Alert.alert('Error', message);
     } finally {
       setIsSaving(false);
     }
@@ -126,8 +127,8 @@ export default function EntryScreen() {
             try {
               await deleteEntry(params.entryId as string);
               router.back();
-            } catch (error: any) {
-              Alert.alert('Error', error.message);
+            } catch {
+              Alert.alert('Error', 'Failed to delete entry');
             } finally {
               setIsDeleting(false);
             }
@@ -137,7 +138,10 @@ export default function EntryScreen() {
     );
   };
 
-  const styles = createStyles(colors, insets);
+  const styles = useMemo(
+    () => createStyles(colors, insets),
+    [colors, insets],
+  );
 
   return (
     <KeyboardAvoidingView
@@ -146,7 +150,7 @@ export default function EntryScreen() {
     >
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton} accessibilityRole="button" accessibilityLabel="Close">
           <Ionicons name="close" size={28} color={colors.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>
@@ -156,6 +160,8 @@ export default function EntryScreen() {
           onPress={handleSave}
           style={styles.headerButton}
           disabled={isSaving}
+          accessibilityRole="button"
+          accessibilityLabel="Save entry"
         >
           {isSaving ? (
             <ActivityIndicator size="small" color={colors.primary} />

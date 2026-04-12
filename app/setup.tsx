@@ -1,7 +1,7 @@
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import React, { useState } from 'react';
+import React, { useState, useRef, useMemo, useCallback } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -12,24 +12,24 @@ import {
   TouchableOpacity,
   View,
   Animated,
-  useWindowDimensions,
 } from 'react-native';
 import { createIdentity } from '../core/auth/identityService';
 import { useAppStore } from '../store/useAppStore';
 import { useTheme } from '../hooks/useTheme';
+import { useIsDesktop } from '../hooks/useBreakpoint';
 import { spacing, radius, typography } from '../utils/themedStyles';
 import type { ThemeColors } from '../constants/Colors';
 
 export default function SetupScreen() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const router = useRouter();
   const { setLoading, setAuthenticated, setIdentity, setMasterKey, setUserId } = useAppStore();
   const colors = useTheme();
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
-  const isWebDesktop = Platform.OS === 'web' && width >= 1024;
-  const fadeAnim = useState(new Animated.Value(0))[0];
+  const isDesktop = useIsDesktop();
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
   React.useEffect(() => {
     Animated.timing(fadeAnim, {
@@ -37,9 +37,9 @@ export default function SetupScreen() {
       duration: 400,
       useNativeDriver: true,
     }).start();
-  }, []);
+  }, [fadeAnim]);
 
-  const handleCreate = async () => {
+  const handleCreate = useCallback(async () => {
     if (!password.trim() || !confirmPassword.trim()) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
@@ -55,6 +55,7 @@ export default function SetupScreen() {
       return;
     }
 
+    setIsSubmitting(true);
     setLoading(true);
     try {
       const { identity, masterKey } = await createIdentity(password);
@@ -63,21 +64,25 @@ export default function SetupScreen() {
       setUserId(identity.id);
       setAuthenticated(true);
       router.replace('/(tabs)');
-    } catch (error: any) {
-      console.log('error', error);
-      Alert.alert('Error', error.message);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to create vault';
+      Alert.alert('Error', message);
     } finally {
       setLoading(false);
+      setIsSubmitting(false);
     }
-  };
+  }, [password, confirmPassword, setLoading, setIdentity, setMasterKey, setUserId, setAuthenticated, router]);
 
-  const styles = createStyles(colors, insets);
+  const styles = useMemo(
+    () => createStyles(colors, insets),
+    [colors, insets],
+  );
 
   return (
-    <View style={isWebDesktop ? styles.webRoot : styles.container}>
+    <View style={isDesktop ? styles.webRoot : styles.container}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={isWebDesktop ? styles.webContent : styles.container}
+        style={isDesktop ? styles.webContent : styles.container}
       >
       <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
         {/* Shield Icon */}

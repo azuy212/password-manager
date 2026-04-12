@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,6 @@ import {
   Platform,
   Alert,
   Animated,
-  useWindowDimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,6 +18,7 @@ import { useUnlock } from '../core/auth/useUnlock';
 import { getIdentity, clearIdentity } from '../core/auth/identityService';
 import { useAppStore } from '../store/useAppStore';
 import { useTheme } from '../hooks/useTheme';
+import { useIsDesktop } from '../hooks/useBreakpoint';
 import { spacing, radius, typography } from '../utils/themedStyles';
 import type { ThemeColors } from '../constants/Colors';
 
@@ -31,9 +31,8 @@ export default function UnlockScreen() {
   const { setLoading, setError, setAuthenticated, setIdentity, setMasterKey, setUserId } = useAppStore();
   const colors = useTheme();
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
-  const isWebDesktop = Platform.OS === 'web' && width >= 1024;
-  const fadeAnim = useState(new Animated.Value(0))[0];
+  const isDesktop = useIsDesktop();
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.timing(fadeAnim, {
@@ -49,22 +48,9 @@ export default function UnlockScreen() {
         setHasIdentity(true);
       }
     });
-  }, []);
+  }, [fadeAnim, router]);
 
-  if (hasIdentity === null) {
-    return (
-      <View style={{
-        flex: 1,
-        backgroundColor: colors.background,
-        justifyContent: 'center',
-        alignItems: 'center',
-      }}>
-        <ActivityIndicator size="large" color={colors.accent} />
-      </View>
-    );
-  }
-
-  const handleSubmit = async () => {
+  const handleSubmit = useCallback(async () => {
     if (!password.trim() || isSubmitting) {
       Alert.alert('Error', 'Unable to unlock vault');
       return;
@@ -86,22 +72,37 @@ export default function UnlockScreen() {
       } else {
         Alert.alert('Error', 'Unable to unlock vault');
       }
-    } catch (error: any) {
-      setError(error.message);
+    } catch {
       Alert.alert('Error', 'Unable to unlock vault');
     } finally {
       setLoading(false);
       setIsSubmitting(false);
     }
-  };
+  }, [password, isSubmitting, unlock, setLoading, setIdentity, setUserId, setMasterKey, setAuthenticated, router]);
 
-  const styles = createStyles(colors, insets);
+  const styles = useMemo(
+    () => createStyles(colors, insets),
+    [colors, insets],
+  );
+
+  if (hasIdentity === null) {
+    return (
+      <View style={{
+        flex: 1,
+        backgroundColor: colors.background,
+        justifyContent: 'center',
+        alignItems: 'center',
+      }}>
+        <ActivityIndicator size="large" color={colors.accent} />
+      </View>
+    );
+  }
 
   return (
-    <View style={isWebDesktop ? styles.webRoot : styles.container}>
+    <View style={isDesktop ? styles.webRoot : styles.container}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={isWebDesktop ? styles.webContent : styles.container}
+        style={isDesktop ? styles.webContent : styles.container}
       >
       <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
         {/* Lock Icon */}

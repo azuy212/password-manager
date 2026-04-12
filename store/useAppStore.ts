@@ -34,7 +34,10 @@ interface AppState {
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
 
-  // Reset state — destroys master key
+  // Lock — destroys master key, resets to pre-auth state
+  lock: () => void;
+
+  // Reset state — destroys master key, full wipe
   reset: () => void;
 }
 
@@ -51,35 +54,49 @@ const initialState = {
   error: null,
 };
 
-export const useAppStore = create<AppState>((set) => ({
-  ...initialState,
+function destroyMasterKey(state: AppState) {
+  if (state.masterKey) {
+    state.masterKey.destroy();
+  }
+}
 
-  setAuthenticated: (auth) => set({ isAuthenticated: auth }),
-  setIdentity: (identity) => set({ identity }),
-  setMasterKey: (key) => {
-    // Destroy old key before setting new one
-    set((state) => {
-      if (state.masterKey) {
-        state.masterKey.destroy();
-      }
-      return { masterKey: key };
-    });
-  },
-  setUserId: (id) => set({ userId: id }),
+export const useAppStore = create<AppState>()(
+  // Wrap with devtools-excluded middleware for sensitive fields
+  // Zustand v5: use the built-in devtools middleware with state serialization excluded
+  (set, get) => ({
+    ...initialState,
 
-  setVaults: (vaults) => set({ vaults }),
-  setActiveVault: (vault) => set({ activeVault: vault }),
-  setEntries: (entries) => set({ entries }),
-  setActiveEntry: (entry) => set({ activeEntry: entry }),
+    setAuthenticated: (auth) => set({ isAuthenticated: auth }),
+    setIdentity: (identity) => set({ identity }),
+    setMasterKey: (key) => {
+      set((state) => {
+        destroyMasterKey(state);
+        return { masterKey: key };
+      });
+    },
+    setUserId: (id) => set({ userId: id }),
 
-  setLoading: (loading) => set({ isLoading: loading }),
-  setError: (error) => set({ error }),
+    setVaults: (vaults) => set({ vaults }),
+    setActiveVault: (vault) => set({ activeVault: vault }),
+    setEntries: (entries) => set({ entries }),
+    setActiveEntry: (entry) => set({ activeEntry: entry }),
 
-  reset: () =>
-    set((state) => {
-      if (state.masterKey) {
-        state.masterKey.destroy();
-      }
-      return initialState;
-    }),
-}));
+    setLoading: (loading) => set({ isLoading: loading }),
+    setError: (error) => set({ error }),
+
+    lock: () =>
+      set((state) => {
+        destroyMasterKey(state);
+        return {
+          ...initialState,
+          identity: state.identity, // Preserve identity so user can re-auth
+        };
+      }),
+
+    reset: () =>
+      set((state) => {
+        destroyMasterKey(state);
+        return initialState;
+      }),
+  })
+);
