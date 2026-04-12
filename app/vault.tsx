@@ -9,23 +9,39 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useWindowDimensions, Platform } from 'react-native';
 import { getEntriesForVault } from '../core/vault/vaultService';
 import { useAppStore } from '../store/useAppStore';
 import type { VaultEntry } from '../types/vault';
+import { useTheme } from '../hooks/useTheme';
+import { spacing, radius, typography } from '../utils/themedStyles';
+import type { ThemeColors } from '../constants/Colors';
+import { InlineLoader } from '../components/InlineLoader';
+import { WebLayout } from '../components/WebLayout';
+import { VaultSplitView } from '../components/VaultSplitView';
+
+const DESKTOP_MIN = 1024;
 
 export default function VaultScreen() {
   const params = useLocalSearchParams<{ vaultId: string; vaultName: string }>();
   const [entries, setEntries] = useState<VaultEntry[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
   const { masterKey } = useAppStore();
+  const colors = useTheme();
+  const insets = useSafeAreaInsets();
 
   const loadEntries = useCallback(async () => {
     if (!params.vaultId || !masterKey) return;
+    setIsLoading(true);
     try {
       const data = await getEntriesForVault(params.vaultId, masterKey);
       setEntries(data);
     } catch (error: any) {
       Alert.alert('Error', 'Failed to load entries');
+    } finally {
+      setIsLoading(false);
     }
   }, [params.vaultId, masterKey]);
 
@@ -49,108 +65,169 @@ export default function VaultScreen() {
     });
   };
 
+  const styles = createStyles(colors, insets);
+
   const renderItem = ({ item }: { item: VaultEntry }) => (
     <TouchableOpacity
       style={styles.entryItem}
       onPress={() => handleEditEntry(item)}
+      activeOpacity={0.7}
     >
-      <Ionicons name="key" size={24} color="#007AFF" />
-      <View style={styles.entryInfo}>
-        <Text style={styles.entryTitle}>{item.title}</Text>
-        <Text style={styles.entryUsername}>{item.username}</Text>
+      <View style={styles.entryIcon}>
+        <Ionicons name="key" size={20} color={colors.primary} />
       </View>
-      <Ionicons name="chevron-forward" size={20} color="#999" />
+      <View style={styles.entryInfo}>
+        <Text style={styles.entryTitle} numberOfLines={1}>{item.title}</Text>
+        <Text style={styles.entryUsername} numberOfLines={1}>{item.username}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
     </TouchableOpacity>
   );
 
+  const { width } = useWindowDimensions();
+  const isDesktop = width >= DESKTOP_MIN;
+
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>{params.vaultName}</Text>
-      <FlatList
-        data={entries}
-        keyExtractor={(item) => item.id}
-        renderItem={renderItem}
-        contentContainerStyle={styles.list}
-        ListEmptyComponent={
-          <View style={styles.empty}>
-            <Ionicons name="key" size={64} color="#ccc" />
-            <Text style={styles.emptyText}>No entries yet</Text>
-            <Text style={styles.emptySubtext}>
-              Tap + to add a password
+    <WebLayout>
+      {isDesktop ? (
+        <VaultSplitView
+          vaultId={params.vaultId as string}
+          vaultName={params.vaultName as string}
+          entries={entries}
+          isLoading={isLoading}
+          onAddEntry={loadEntries}
+        />
+      ) : (
+        <View style={styles.container}>
+          {/* Vault Header */}
+          <View style={styles.vaultHeader}>
+            <Text style={styles.title} numberOfLines={1}>{params.vaultName}</Text>
+            <Text style={styles.entryCount}>
+              {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
             </Text>
           </View>
-        }
-      />
-      <TouchableOpacity style={styles.fab} onPress={handleAddEntry}>
-        <Ionicons name="add" size={28} color="#fff" />
-      </TouchableOpacity>
-    </View>
+
+          <FlatList
+            data={entries}
+            keyExtractor={(item) => item.id}
+            renderItem={renderItem}
+            contentContainerStyle={styles.list}
+            ListEmptyComponent={
+              isLoading ? (
+                <InlineLoader />
+              ) : (
+                <View style={styles.empty}>
+                  <Ionicons name="key-outline" size={64} color={colors.textTertiary} />
+                  <Text style={styles.emptyText}>No entries yet</Text>
+                  <Text style={styles.emptySubtext}>
+                    Tap + to add a password
+                  </Text>
+                </View>
+              )
+            }
+          />
+
+          {/* FAB */}
+          <TouchableOpacity
+            style={styles.fab}
+            onPress={handleAddEntry}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="add" size={28} color={colors.textInverse} />
+          </TouchableOpacity>
+        </View>
+      )}
+    </WebLayout>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    padding: 16,
-  },
-  list: {
-    padding: 16,
-  },
-  entryItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#f5f5f5',
-    borderRadius: 8,
-    marginBottom: 8,
-  },
-  entryInfo: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  entryTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  entryUsername: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 2,
-  },
-  empty: {
-    alignItems: 'center',
-    marginTop: 80,
-  },
-  emptyText: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginTop: 16,
-    color: '#666',
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#999',
-    marginTop: 4,
-  },
-  fab: {
-    position: 'absolute',
-    right: 16,
-    bottom: 16,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#007AFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-  },
-});
+const createStyles = (colors: ThemeColors, insets: ReturnType<typeof useSafeAreaInsets>) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    vaultHeader: {
+      paddingHorizontal: spacing.lg,
+      paddingTop: insets.top + spacing.md,
+      paddingBottom: spacing.md,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+    title: {
+      ...typography.h3,
+      color: colors.text,
+      marginBottom: spacing.xs,
+    },
+    entryCount: {
+      ...typography.small,
+      color: colors.textSecondary,
+    },
+    list: {
+      padding: spacing.md,
+    },
+    entryItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      padding: spacing.md,
+      backgroundColor: colors.surface,
+      borderRadius: radius.md,
+      marginBottom: spacing.sm,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    entryIcon: {
+      width: 40,
+      height: 40,
+      borderRadius: radius.sm,
+      backgroundColor: colors.primaryMuted,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    entryInfo: {
+      flex: 1,
+      marginLeft: spacing.md,
+    },
+    entryTitle: {
+      ...typography.bodyMedium,
+      color: colors.text,
+    },
+    entryUsername: {
+      ...typography.small,
+      color: colors.textSecondary,
+      marginTop: 2,
+    },
+    empty: {
+      alignItems: 'center',
+      marginTop: spacing.xxxl + spacing.xl,
+      paddingHorizontal: spacing.xl,
+    },
+    emptyText: {
+      ...typography.h4,
+      color: colors.textSecondary,
+      marginTop: spacing.md,
+    },
+    emptySubtext: {
+      ...typography.caption,
+      color: colors.textTertiary,
+      marginTop: spacing.xs,
+      textAlign: 'center',
+    },
+    fab: {
+      position: 'absolute',
+      right: spacing.md,
+      bottom: Math.max(insets.bottom + spacing.sm, spacing.md),
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      backgroundColor: colors.primary,
+      justifyContent: 'center',
+      alignItems: 'center',
+      shadowColor: colors.shadow,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 12,
+      elevation: 6,
+    },
+  });
