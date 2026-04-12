@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   View,
   Animated,
+  useWindowDimensions,
 } from 'react-native';
 import { createIdentity } from '../core/auth/identityService';
 import { useAppStore } from '../store/useAppStore';
@@ -26,6 +27,8 @@ export default function SetupScreen() {
   const { setLoading, setAuthenticated, setIdentity, setMasterKey, setUserId } = useAppStore();
   const colors = useTheme();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const isWebDesktop = Platform.OS === 'web' && width >= 1024;
   const fadeAnim = useState(new Animated.Value(0))[0];
 
   React.useEffect(() => {
@@ -71,10 +74,11 @@ export default function SetupScreen() {
   const styles = createStyles(colors, insets);
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
-    >
+    <View style={isWebDesktop ? styles.webRoot : styles.container}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={isWebDesktop ? styles.webContent : styles.container}
+      >
       <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
         {/* Shield Icon */}
         <View style={styles.iconContainer}>
@@ -121,12 +125,23 @@ export default function SetupScreen() {
           </Text>
         </View>
       </Animated.View>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const createStyles = (colors: ThemeColors, insets: ReturnType<typeof useSafeAreaInsets>) =>
   StyleSheet.create({
+    webRoot: {
+      flex: 1,
+      backgroundColor: colors.background,
+      alignItems: 'center',
+    },
+    webContent: {
+      flex: 1,
+      width: '100%',
+      maxWidth: 480,
+    },
     container: {
       flex: 1,
       backgroundColor: colors.background,

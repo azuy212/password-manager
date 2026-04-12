@@ -10,6 +10,7 @@ import {
   Platform,
   Alert,
   Animated,
+  useWindowDimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -30,6 +31,8 @@ export default function UnlockScreen() {
   const { setLoading, setError, setAuthenticated, setIdentity, setMasterKey, setUserId } = useAppStore();
   const colors = useTheme();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const isWebDesktop = Platform.OS === 'web' && width >= 1024;
   const fadeAnim = useState(new Animated.Value(0))[0];
 
   useEffect(() => {
@@ -95,10 +98,11 @@ export default function UnlockScreen() {
   const styles = createStyles(colors, insets);
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
-    >
+    <View style={isWebDesktop ? styles.webRoot : styles.container}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={isWebDesktop ? styles.webContent : styles.container}
+      >
       <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
         {/* Lock Icon */}
         <View style={styles.iconContainer}>
@@ -161,12 +165,23 @@ export default function UnlockScreen() {
           <Text style={styles.resetButtonText}>Forgot Password? Reset Vault</Text>
         </TouchableOpacity>
       </Animated.View>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const createStyles = (colors: ThemeColors, insets: ReturnType<typeof useSafeAreaInsets>) =>
   StyleSheet.create({
+    webRoot: {
+      flex: 1,
+      backgroundColor: colors.background,
+      alignItems: 'center',
+    },
+    webContent: {
+      flex: 1,
+      width: '100%',
+      maxWidth: 480,
+    },
     loadingContainer: {
       flex: 1,
       backgroundColor: colors.background,
