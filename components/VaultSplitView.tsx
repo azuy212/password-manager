@@ -1,16 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
   TextInput,
-  TouchableOpacity,
-  FlatList,
+  Pressable,
+  FlatList as RNFlatList,
   StyleSheet,
   Alert,
   Platform,
-  ScrollView,
   ActivityIndicator,
 } from 'react-native';
+import { ScrollView } from 'react-native-gesture-handler';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -70,7 +70,7 @@ export function VaultSplitView({
   const [searchQuery, setSearchQuery] = useState('');
 
   // Load entry data when selected
-  const handleSelectEntry = (entry: VaultEntry) => {
+  const handleSelectEntry = useCallback((entry: VaultEntry) => {
     setSelectedEntry(entry);
     setIsEditing(false);
     setFormData({
@@ -81,16 +81,16 @@ export function VaultSplitView({
       notes: entry.notes || '',
     });
     setShowPassword(false);
-  };
+  }, []);
 
-  const handleNewEntry = () => {
+  const handleNewEntry = useCallback(() => {
     setIsEditing(true);
     setSelectedEntry(null);
     setFormData(EMPTY_FORM);
     setShowPassword(false);
-  };
+  }, []);
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async () => {
     if (!formData.title.trim() || !formData.username.trim()) {
       Alert.alert('Error', 'Title and username are required');
       return;
@@ -122,14 +122,15 @@ export function VaultSplitView({
       setFormData(EMPTY_FORM);
       setSelectedEntry(null);
       onAddEntry();
-    } catch (error: any) {
-      Alert.alert('Error', error.message);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to save entry';
+      Alert.alert('Error', message);
     } finally {
       setIsSaving(false);
     }
-  };
+  }, [formData, masterKey, isSaving, selectedEntry, vaultId, onAddEntry]);
 
-  const handleDelete = () => {
+  const handleDelete = useCallback(() => {
     if (!selectedEntry || isDeleting) return;
     Alert.alert(
       'Delete Entry',
@@ -146,8 +147,9 @@ export function VaultSplitView({
               setSelectedEntry(null);
               setIsEditing(false);
               onAddEntry();
-            } catch (error: any) {
-              Alert.alert('Error', error.message);
+            } catch (error: unknown) {
+              const message = error instanceof Error ? error.message : 'Failed to delete entry';
+              Alert.alert('Error', message);
             } finally {
               setIsDeleting(false);
             }
@@ -155,9 +157,12 @@ export function VaultSplitView({
         },
       ]
     );
-  };
+  }, [selectedEntry, isDeleting, onAddEntry]);
 
-  const styles = createStyles(colors, insets);
+  const styles = useMemo(
+    () => createStyles(colors, insets),
+    [colors, insets],
+  );
   const filteredEntries = searchQuery
     ? entries.filter(
         (e) =>
@@ -172,9 +177,9 @@ export function VaultSplitView({
       <View style={styles.listPane}>
         <View style={styles.listHeader}>
           <Text style={styles.listTitle} numberOfLines={1}>{vaultName}</Text>
-          <TouchableOpacity style={styles.addButton} onPress={handleNewEntry}>
+          <Pressable style={styles.addButton} onPress={handleNewEntry} accessibilityRole="button" accessibilityLabel="Add new entry">
             <Ionicons name="add" size={20} color={colors.accent} />
-          </TouchableOpacity>
+          </Pressable>
         </View>
 
         {/* Search */}
@@ -188,9 +193,9 @@ export function VaultSplitView({
             onChangeText={setSearchQuery}
           />
           {searchQuery ? (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
+            <Pressable onPress={() => setSearchQuery('')} accessibilityRole="button" accessibilityLabel="Clear search">
               <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
-            </TouchableOpacity>
+            </Pressable>
           ) : null}
         </View>
 
@@ -200,16 +205,22 @@ export function VaultSplitView({
             <ActivityIndicator size="large" color={colors.accent} />
           </View>
         ) : (
-          <FlatList
+          <RNFlatList
             data={filteredEntries}
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.listContent}
             renderItem={({ item }) => {
               const isActive = selectedEntry?.id === item.id;
               return (
-                <TouchableOpacity
-                  style={[styles.listItem, isActive && styles.listItemActive]}
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.listItem,
+                    isActive && styles.listItemActive,
+                    { opacity: pressed ? 0.7 : 1 },
+                  ]}
                   onPress={() => handleSelectEntry(item)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`View entry ${item.title}`}
                 >
                   <View style={styles.listItemIcon}>
                     <Ionicons name="key" size={18} color={isActive ? colors.accent : colors.primary} />
@@ -220,7 +231,7 @@ export function VaultSplitView({
                     </Text>
                     <Text style={styles.listItemUsername} numberOfLines={1}>{item.username}</Text>
                   </View>
-                </TouchableOpacity>
+                </Pressable>
               );
             }}
             ListEmptyComponent={
@@ -247,18 +258,20 @@ export function VaultSplitView({
               <View style={styles.detailActions}>
                 {isEditing ? (
                   <>
-                    <TouchableOpacity
+                    <Pressable
                       style={styles.detailActionBtn}
                       onPress={handleSave}
                       disabled={isSaving}
+                      accessibilityRole="button"
+                      accessibilityLabel="Save entry"
                     >
                       {isSaving ? (
                         <ActivityIndicator size="small" color={colors.accent} />
                       ) : (
                         <Text style={styles.detailActionText}>Save</Text>
                       )}
-                    </TouchableOpacity>
-                    <TouchableOpacity
+                    </Pressable>
+                    <Pressable
                       style={styles.detailActionBtn}
                       onPress={() => {
                         setIsEditing(false);
@@ -266,31 +279,37 @@ export function VaultSplitView({
                           setFormData(EMPTY_FORM);
                         }
                       }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Cancel"
                     >
                       <Text style={[styles.detailActionText, { color: colors.textTertiary }]}>
                         Cancel
                       </Text>
-                    </TouchableOpacity>
+                    </Pressable>
                   </>
                 ) : (
                   <>
-                    <TouchableOpacity
+                    <Pressable
                       style={styles.detailActionBtn}
                       onPress={() => setIsEditing(true)}
+                      accessibilityRole="button"
+                      accessibilityLabel="Edit entry"
                     >
                       <Ionicons name="create-outline" size={18} color={colors.accent} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
+                    </Pressable>
+                    <Pressable
                       style={styles.detailActionBtn}
                       onPress={handleDelete}
                       disabled={isDeleting}
+                      accessibilityRole="button"
+                      accessibilityLabel="Delete entry"
                     >
                       {isDeleting ? (
                         <ActivityIndicator size="small" color={colors.danger} />
                       ) : (
                         <Ionicons name="trash-outline" size={18} color={colors.danger} />
                       )}
-                    </TouchableOpacity>
+                    </Pressable>
                   </>
                 )}
               </View>
@@ -445,7 +464,7 @@ function DetailPasswordInput({
           autoCapitalize="none"
         />
         <View style={detailStyles.passwordActions}>
-          <TouchableOpacity
+          <Pressable
             style={[
               detailStyles.passwordActionBtn,
               { backgroundColor: copied ? (colors.success + '20') : colors.primaryMuted },
@@ -460,8 +479,8 @@ function DetailPasswordInput({
               size={16}
               color={copied ? colors.success : colors.textTertiary}
             />
-          </TouchableOpacity>
-          <TouchableOpacity
+          </Pressable>
+          <Pressable
             style={detailStyles.passwordActionBtn}
             onPress={onTogglePassword}
             accessibilityRole="button"
@@ -472,7 +491,7 @@ function DetailPasswordInput({
               size={16}
               color={colors.textTertiary}
             />
-          </TouchableOpacity>
+          </Pressable>
         </View>
       </View>
     </View>
@@ -574,7 +593,7 @@ function createStyles(colors: ReturnType<typeof useTheme>, insets: ReturnType<ty
       borderRightColor: colors.border,
       backgroundColor: colors.background,
       ...Platform.select({
-        web: { height: '100%' } as any,
+        web: { height: '100%' as const },
         default: {},
       }),
     },
@@ -668,7 +687,7 @@ function createStyles(colors: ReturnType<typeof useTheme>, insets: ReturnType<ty
       flex: 1,
       backgroundColor: colors.background,
       ...Platform.select({
-        web: { height: '100%' } as any,
+        web: { height: '100%' as const },
         default: {},
       }),
     },

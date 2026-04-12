@@ -21,7 +21,7 @@ export function WebLayout({ children }: WebLayoutProps) {
 
   const handleLock = () => {
     lock();
-    router.replace('/' as any);
+    router.replace('/');
   };
 
   if (!isDesktop) {
@@ -37,28 +37,22 @@ export function WebLayout({ children }: WebLayoutProps) {
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    flexDirection: 'row',
-    ...Platform.select({
-      web: {
-        flexDirection: 'row',
-        width: '100%',
-        minHeight: '100vh',
-      } as any,
-      default: {
-        flexDirection: 'row',
-      },
+    ...(Platform.OS === 'web' ? {
+      flexDirection: 'row',
+      width: '100%',
+      minHeight: '100vh',
+    } : {
+      flexDirection: 'row',
     }),
-  },
+  } as any,
   main: {
     flex: 1,
-    ...Platform.select({
-      web: {
-        minWidth: 0,
-      } as any,
-      default: {},
-    }),
+    ...(Platform.OS === 'web' ? {
+      minWidth: 0,
+    } : {}),
   },
 });

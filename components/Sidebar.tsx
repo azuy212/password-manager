@@ -1,11 +1,6 @@
-import React from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  Platform,
-} from 'react-native';
+import React, { useMemo } from 'react';
+import { Platform, StyleSheet, Pressable, View, Text } from 'react-native';
+import type { StyleProp, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, usePathname } from 'expo-router';
 import { useTheme } from '@/hooks/useTheme';
@@ -16,12 +11,12 @@ const SIDEBAR_WIDTH = 240;
 type NavItem = {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
-  route: string;
+  route: '/' | '/(tabs)/shared' | '/(tabs)/settings';
   danger?: boolean;
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { icon: 'lock-closed', label: 'Vaults', route: '/(tabs)' },
+  { icon: 'lock-closed', label: 'Vaults', route: '/' },
   { icon: 'people', label: 'Shared', route: '/(tabs)/shared' },
   { icon: 'settings', label: 'Settings', route: '/(tabs)/settings' },
 ];
@@ -34,7 +29,7 @@ export function Sidebar({ onLock }: SidebarProps) {
   const colors = useTheme();
   const router = useRouter();
   const pathname = usePathname();
-  const styles = createStyles(colors);
+  const styles = useMemo(() => createStyles(colors), [colors]);
 
   const activeRoute = getActiveRoute(pathname);
 
@@ -58,18 +53,12 @@ export function Sidebar({ onLock }: SidebarProps) {
         {NAV_ITEMS.map((item) => {
           const isActive = activeRoute === item.route;
           return (
-            <TouchableOpacity
+            <Pressable
               key={item.route}
               style={[styles.navItem, isActive && styles.navItemActive]}
-              onPress={() => router.push(item.route as any)}
-              {...(Platform.OS === 'web'
-                ? {
-                    onMouseEnter: (e: any) =>
-                      !isActive && (e.currentTarget.style.background = colors.primaryMuted),
-                    onMouseLeave: (e: any) =>
-                      !isActive && (e.currentTarget.style.background = 'transparent'),
-                  }
-                : {})}
+              onPress={() => router.push(item.route)}
+              accessibilityRole="button"
+              accessibilityLabel={item.label}
             >
               <Ionicons
                 name={item.icon}
@@ -85,7 +74,7 @@ export function Sidebar({ onLock }: SidebarProps) {
               >
                 {item.label}
               </Text>
-            </TouchableOpacity>
+            </Pressable>
           );
         })}
       </View>
@@ -94,51 +83,43 @@ export function Sidebar({ onLock }: SidebarProps) {
       <View style={styles.spacer} />
 
       {/* Lock button */}
-      <TouchableOpacity
+      <Pressable
         style={styles.lockButton}
         onPress={onLock}
-        {...(Platform.OS === 'web'
-          ? {
-              onMouseEnter: (e: any) =>
-                (e.currentTarget.style.background = colors.dangerLight),
-              onMouseLeave: (e: any) =>
-                (e.currentTarget.style.background = 'transparent'),
-            }
-          : {})}
+        accessibilityRole="button"
+        accessibilityLabel="Lock Vault"
       >
         <Ionicons name="log-out-outline" size={20} color={colors.danger} />
         <Text style={[styles.lockLabel, { color: colors.danger }]} numberOfLines={1}>
           Lock Vault
         </Text>
-      </TouchableOpacity>
+      </Pressable>
     </View>
   );
 }
 
-function getActiveRoute(pathname: string): string {
+function getActiveRoute(pathname: string): NavItem['route'] {
   if (pathname.includes('/shared')) return '/(tabs)/shared';
   if (pathname.includes('/settings')) return '/(tabs)/settings';
-  return '/(tabs)';
+  return '/';
 }
 
-function createStyles(colors: ReturnType<typeof useTheme>) {
-  return StyleSheet.create({
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function createStyles(colors: ReturnType<typeof useTheme>): Record<string, any> {
+  return {
     sidebar: {
       width: SIDEBAR_WIDTH,
       backgroundColor: colors.surface,
       borderRightWidth: 1,
       borderRightColor: colors.border,
       flexDirection: 'column',
-      ...Platform.select({
-        web: {
-          minHeight: '100vh',
-          height: '100%',
-          position: 'sticky',
-          top: 0,
-        } as any,
-        default: {},
-      }),
-    },
+      ...(Platform.OS === 'web' ? {
+        minHeight: '100vh',
+        height: '100%',
+        position: 'sticky',
+        top: 0,
+      } : {}),
+    } as ViewStyle,
     header: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -200,5 +181,5 @@ function createStyles(colors: ReturnType<typeof useTheme>) {
       ...typography.bodyMedium,
       fontSize: 14,
     },
-  });
+  };
 }

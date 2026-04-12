@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Alert, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,6 +9,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { spacing, radius, typography } from '@/utils/themedStyles';
 import { LoadingOverlay } from '@/components/LoadingOverlay';
 import { WebLayout } from '@/components/WebLayout';
+import { ScrollView } from 'react-native-gesture-handler';
 
 // Shared styles for SettingItem (static, no dependencies on insets)
 const itemStyles = StyleSheet.create({
@@ -43,14 +44,15 @@ type SettingItemProps = {
 
 function SettingItem({ icon, label, onPress, danger, colors }: SettingItemProps) {
   return (
-    <TouchableOpacity
+    <Pressable
       style={[
         itemStyles.settingItem,
         { backgroundColor: colors.surface, borderColor: colors.border },
         danger && { backgroundColor: colors.dangerLight, borderColor: colors.danger },
       ]}
       onPress={onPress}
-      activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={label}
     >
       <View style={[itemStyles.iconContainer, { backgroundColor: danger ? colors.dangerLight : colors.primaryMuted }]}>
         <Ionicons name={icon} size={20} color={danger ? colors.danger : colors.primary} />
@@ -59,7 +61,7 @@ function SettingItem({ icon, label, onPress, danger, colors }: SettingItemProps)
         {label}
       </Text>
       <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 

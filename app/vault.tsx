@@ -3,12 +3,12 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   Alert,
-  FlatList,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
+  Pressable,
 } from 'react-native';
+import { FlatList } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getEntriesForVault } from '../core/vault/vaultService';
 import { useAppStore } from '../store/useAppStore';
@@ -60,10 +60,12 @@ interface VaultEntryItemProps {
 
 const VaultEntryItem = React.memo(function VaultEntryItem({ item, onPress, colors }: VaultEntryItemProps) {
   return (
-    <TouchableOpacity
-      style={[vaultEntryItemBase.entryItem, { backgroundColor: colors.surface, borderColor: colors.border }]}
+    <Pressable
+      style={({ pressed }) => [
+        vaultEntryItemBase.entryItem,
+        { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
+      ]}
       onPress={() => onPress(item)}
-      activeOpacity={0.7}
       accessibilityRole="button"
       accessibilityLabel={`View entry for ${item.title}`}
     >
@@ -75,7 +77,7 @@ const VaultEntryItem = React.memo(function VaultEntryItem({ item, onPress, color
         <Text style={[vaultEntryItemBase.entryUsername, { color: colors.textSecondary }]} numberOfLines={1}>{item.username}</Text>
       </View>
       <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-    </TouchableOpacity>
+    </Pressable>
   );
 });
 
@@ -180,15 +182,14 @@ export default function VaultScreen() {
           />
 
           {/* FAB */}
-          <TouchableOpacity
+          <Pressable
             style={styles.fab}
             onPress={handleAddEntry}
-            activeOpacity={0.85}
             accessibilityRole="button"
             accessibilityLabel="Add new entry"
           >
             <Ionicons name="add" size={28} color={colors.textInverse} />
-          </TouchableOpacity>
+          </Pressable>
         </View>
       )}
     </WebLayout>

@@ -3,6 +3,7 @@ import { Stack, useRouter, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useColorScheme } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import Colors from '@/constants/Colors';
 import { useAutoLock } from '@/core/security/useAutoLock';
 
@@ -19,7 +20,7 @@ function AutoLockGuard() {
   useAutoLock(() => {
     // Only navigate away if not already on the unlock screen
     if (pathname !== '/' && pathname !== '/setup') {
-      router.replace('/' as any);
+      router.replace('/');
     }
   });
 
@@ -44,18 +45,20 @@ export default function RootLayout() {
   };
 
   return (
-    <SafeAreaProvider>
-      <ThemeProvider value={navigationTheme}>
-        <AutoLockGuard />
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="index" />
-          <Stack.Screen name="setup" />
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="vault" />
-          <Stack.Screen name="entry" options={{ presentation: 'modal' }} />
-        </Stack>
-        <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
-      </ThemeProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <ThemeProvider value={navigationTheme}>
+          <AutoLockGuard />
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="index" />
+            <Stack.Screen name="setup" />
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="vault" />
+            <Stack.Screen name="entry" options={{ presentation: 'modal' }} />
+          </Stack>
+          <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+        </ThemeProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

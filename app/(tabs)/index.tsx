@@ -8,15 +8,15 @@ import React, { useCallback, useMemo, useState } from 'react';
 import {
   Alert,
   Animated,
-  FlatList,
-  Modal,
+  Pressable,
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
+import { FlatList } from 'react-native-gesture-handler';
 import { useTheme } from '@/hooks/useTheme';
 import { spacing, radius, typography } from '@/utils/themedStyles';
 import type { ThemeColors } from '@/constants/Colors';
@@ -34,14 +34,13 @@ interface VaultItemProps {
 
 const VaultItem = React.memo(function VaultItem({ item, onPress, onLongPress, colors }: VaultItemProps) {
   return (
-    <TouchableOpacity
-      style={[
+    <Pressable
+      style={({ pressed }) => [
         vaultItemStyles.item,
-        { backgroundColor: colors.surface, borderColor: colors.border },
+        { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
       ]}
       onPress={() => onPress(item)}
       onLongPress={() => onLongPress(item)}
-      activeOpacity={0.7}
       accessibilityRole="button"
       accessibilityLabel={`Open vault ${item.name}`}
       accessibilityHint="Long press to delete"
@@ -56,7 +55,7 @@ const VaultItem = React.memo(function VaultItem({ item, onPress, onLongPress, co
         </Text>
       </View>
       <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-    </TouchableOpacity>
+    </Pressable>
   );
 });
 
@@ -264,15 +263,14 @@ export default function VaultsScreen() {
         />
 
         {/* FAB */}
-        <TouchableOpacity
+        <Pressable
           style={styles.fab}
           onPress={handleCreateVault}
-          activeOpacity={0.85}
           accessibilityRole="button"
           accessibilityLabel="Create new vault"
         >
           <Ionicons name="add" size={28} color={colors.textInverse} />
-        </TouchableOpacity>
+        </Pressable>
 
         {/* New Vault Modal */}
         <Modal visible={showNewVaultModal} transparent animationType="none">
@@ -298,15 +296,15 @@ export default function VaultsScreen() {
                 onSubmitEditing={handleSaveVault}
               />
               <View style={styles.modalButtons}>
-                <TouchableOpacity
+                <Pressable
                   style={[styles.modalButton, styles.modalButtonCancel]}
                   onPress={closeModal}
                   accessibilityRole="button"
                   accessibilityLabel="Cancel"
                 >
                   <Text style={styles.modalButtonTextCancel}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
+                </Pressable>
+                <Pressable
                   style={[styles.modalButton, styles.modalButtonCreate]}
                   onPress={handleSaveVault}
                   disabled={isCreatingVault}
@@ -318,7 +316,7 @@ export default function VaultsScreen() {
                   ) : (
                     <Text style={styles.modalButtonTextCreate}>Create</Text>
                   )}
-                </TouchableOpacity>
+                </Pressable>
               </View>
             </Animated.View>
           </View>

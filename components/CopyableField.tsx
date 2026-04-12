@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/hooks/useTheme';
@@ -15,7 +15,7 @@ type CopyableFieldProps = {
 export function CopyableField({ label, value, isPassword, isMultiline }: CopyableFieldProps) {
   const colors = useTheme();
   const [copied, setCopied] = useState(false);
-  const styles = createStyles(colors);
+  const styles = useMemo(() => createStyles(colors), [colors]);
 
   const handleCopy = async () => {
     await Clipboard.setStringAsync(value);
@@ -29,10 +29,11 @@ export function CopyableField({ label, value, isPassword, isMultiline }: Copyabl
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.label}>{label}</Text>
-        <TouchableOpacity
+        <Pressable
           style={[styles.copyButton, copied && styles.copyButtonSuccess]}
           onPress={handleCopy}
-          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={`Copy ${label}`}
         >
           {copied ? (
             <>
@@ -45,7 +46,7 @@ export function CopyableField({ label, value, isPassword, isMultiline }: Copyabl
               <Text style={styles.copyText}>Copy</Text>
             </>
           )}
-        </TouchableOpacity>
+        </Pressable>
       </View>
       <View style={[styles.valueBox, isMultiline && styles.valueBoxMultiline]}>
         <Text

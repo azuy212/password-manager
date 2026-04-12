@@ -7,13 +7,13 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-  ScrollView,
+  Pressable,
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
 } from 'react-native';
+import { ScrollView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { ThemeColors } from '../constants/Colors';
 import { createEntry, deleteEntry, getEntry, updateEntry } from '../core/vault/vaultService';
@@ -40,12 +40,12 @@ export default function EntryScreen() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
-  const handleCopyField = async (value: string, field: string) => {
+  const handleCopyField = useCallback(async (value: string, field: string) => {
     if (!value) return;
     await Clipboard.setStringAsync(value);
     setCopiedField(field);
     setTimeout(() => setCopiedField(null), 2000);
-  };
+  }, []);
 
   useEffect(() => {
     if (params.entryId) {
@@ -53,7 +53,7 @@ export default function EntryScreen() {
     }
   }, [params.entryId]);
 
-  const loadEntry = async () => {
+  const loadEntry = useCallback(async () => {
     if (!params.entryId || !masterKey) return;
     setIsLoadingEntry(true);
     try {
@@ -70,9 +70,9 @@ export default function EntryScreen() {
     } finally {
       setIsLoadingEntry(false);
     }
-  };
+  }, [params.entryId, masterKey]);
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async () => {
     if (!title.trim() || !username.trim()) {
       Alert.alert('Error', 'Title and username are required');
       return;
@@ -109,9 +109,9 @@ export default function EntryScreen() {
     } finally {
       setIsSaving(false);
     }
-  };
+  }, [title, username, masterKey, isSaving, params.vaultId, params.entryId, url, notes, password, router]);
 
-  const handleDelete = async () => {
+  const handleDelete = useCallback(async () => {
     if (!params.entryId || isDeleting) return;
 
     Alert.alert(
@@ -136,7 +136,7 @@ export default function EntryScreen() {
         },
       ]
     );
-  };
+  }, [params.entryId, isDeleting, router]);
 
   const styles = useMemo(
     () => createStyles(colors, insets),
@@ -150,13 +150,13 @@ export default function EntryScreen() {
     >
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton} accessibilityRole="button" accessibilityLabel="Close">
+        <Pressable onPress={() => router.back()} style={styles.headerButton} accessibilityRole="button" accessibilityLabel="Close">
           <Ionicons name="close" size={28} color={colors.primary} />
-        </TouchableOpacity>
+        </Pressable>
         <Text style={styles.headerTitle}>
           {params.entryId ? 'Edit Entry' : 'New Entry'}
         </Text>
-        <TouchableOpacity
+        <Pressable
           onPress={handleSave}
           style={styles.headerButton}
           disabled={isSaving}
@@ -168,7 +168,7 @@ export default function EntryScreen() {
           ) : (
             <Text style={styles.saveButton}>Save</Text>
           )}
-        </TouchableOpacity>
+        </Pressable>
       </View>
 
       <ScrollView style={styles.content} contentContainerStyle={styles.scrollContent}>
@@ -192,18 +192,20 @@ export default function EntryScreen() {
               placeholderTextColor={colors.placeholder}
               editable={!isLoadingEntry}
             />
-            <TouchableOpacity
+            <Pressable
               style={[styles.inputActionBtn, copiedField === 'title' && styles.inputActionBtnSuccess]}
               onPress={() => handleCopyField(title, 'title')}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               disabled={isLoadingEntry || !title}
+              accessibilityRole="button"
+              accessibilityLabel="Copy title"
             >
               <Ionicons
                 name={copiedField === 'title' ? 'checkmark' : 'copy-outline'}
                 size={18}
                 color={copiedField === 'title' ? colors.success : colors.textTertiary}
               />
-            </TouchableOpacity>
+            </Pressable>
           </View>
         </View>
 
@@ -219,18 +221,20 @@ export default function EntryScreen() {
               autoCapitalize="none"
               editable={!isLoadingEntry}
             />
-            <TouchableOpacity
+            <Pressable
               style={[styles.inputActionBtn, copiedField === 'username' && styles.inputActionBtnSuccess]}
               onPress={() => handleCopyField(username, 'username')}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               disabled={isLoadingEntry || !username}
+              accessibilityRole="button"
+              accessibilityLabel="Copy username"
             >
               <Ionicons
                 name={copiedField === 'username' ? 'checkmark' : 'copy-outline'}
                 size={18}
                 color={copiedField === 'username' ? colors.success : colors.textTertiary}
               />
-            </TouchableOpacity>
+            </Pressable>
           </View>
         </View>
 
@@ -249,19 +253,21 @@ export default function EntryScreen() {
               editable={!isLoadingEntry}
             />
             <View style={styles.passwordActions}>
-              <TouchableOpacity
+              <Pressable
                 style={styles.passwordActionBtn}
                 onPress={() => setShowPassword(!showPassword)}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 disabled={isLoadingEntry}
+                accessibilityRole="button"
+                accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
               >
                 <Ionicons
                   name={showPassword ? 'eye-off' : 'eye'}
                   size={18}
                   color={colors.textTertiary}
                 />
-              </TouchableOpacity>
-              <TouchableOpacity
+              </Pressable>
+              <Pressable
                 style={[
                   styles.passwordActionBtn,
                   copiedField === 'password' && styles.passwordActionBtnSuccess,
@@ -269,13 +275,15 @@ export default function EntryScreen() {
                 onPress={() => handleCopyField(password, 'password')}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 disabled={isLoadingEntry || !password}
+                accessibilityRole="button"
+                accessibilityLabel="Copy password"
               >
                 <Ionicons
                   name={copiedField === 'password' ? 'checkmark' : 'copy-outline'}
                   size={18}
                   color={copiedField === 'password' ? colors.success : colors.textTertiary}
                 />
-              </TouchableOpacity>
+              </Pressable>
             </View>
           </View>
         </View>
@@ -293,18 +301,20 @@ export default function EntryScreen() {
               keyboardType="url"
               editable={!isLoadingEntry}
             />
-            <TouchableOpacity
+            <Pressable
               style={[styles.inputActionBtn, copiedField === 'url' && styles.inputActionBtnSuccess]}
               onPress={() => handleCopyField(url, 'url')}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               disabled={isLoadingEntry || !url}
+              accessibilityRole="button"
+              accessibilityLabel="Copy URL"
             >
               <Ionicons
                 name={copiedField === 'url' ? 'checkmark' : 'copy-outline'}
                 size={18}
                 color={copiedField === 'url' ? colors.success : colors.textTertiary}
               />
-            </TouchableOpacity>
+            </Pressable>
           </View>
         </View>
 
@@ -322,27 +332,30 @@ export default function EntryScreen() {
               textAlignVertical="top"
               editable={!isLoadingEntry}
             />
-            <TouchableOpacity
+            <Pressable
               style={[styles.inputActionBtnMultiline, copiedField === 'notes' && styles.inputActionBtnSuccess]}
               onPress={() => handleCopyField(notes, 'notes')}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               disabled={isLoadingEntry || !notes}
+              accessibilityRole="button"
+              accessibilityLabel="Copy notes"
             >
               <Ionicons
                 name={copiedField === 'notes' ? 'checkmark' : 'copy-outline'}
                 size={18}
                 color={copiedField === 'notes' ? colors.success : colors.textTertiary}
               />
-            </TouchableOpacity>
+            </Pressable>
           </View>
         </View>
 
         {params.entryId && (
-          <TouchableOpacity
+          <Pressable
             style={styles.deleteButton}
             onPress={handleDelete}
-            activeOpacity={0.7}
             disabled={isDeleting}
+            accessibilityRole="button"
+            accessibilityLabel="Delete entry"
           >
             {isDeleting ? (
               <ActivityIndicator size="small" color={colors.danger} />
@@ -352,7 +365,7 @@ export default function EntryScreen() {
                 <Text style={styles.deleteButtonText}>Delete Entry</Text>
               </>
             )}
-          </TouchableOpacity>
+          </Pressable>
         )}
       </ScrollView>
     </KeyboardAvoidingView>
