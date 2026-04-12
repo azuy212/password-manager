@@ -22,7 +22,7 @@ export async function getDeviceId(): Promise<string> {
 }
 
 /**
- * Upload local vaults to cloud
+ * Upload local vaults to cloud (encrypted)
  */
 export async function syncVaultsToCloud(vaults: Vault[], userId: string): Promise<void> {
   for (const vault of vaults) {
@@ -31,14 +31,14 @@ export async function syncVaultsToCloud(vaults: Vault[], userId: string): Promis
       .upsert({
         id: vault.id,
         user_id: userId,
-        name: vault.name,
+        name: vault.name, // Vault names are metadata only (not sensitive)
         encrypted_encryption_key: vault.encryptedEncryptionKey,
         updated_at: new Date(vault.updatedAt).toISOString(),
       })
       .select();
 
     if (error) {
-      console.error('Failed to sync vault:', error.message);
+      console.error('Failed to sync vault');
       throw error;
     }
   }
@@ -54,7 +54,7 @@ export async function syncVaultsFromCloud(userId: string): Promise<Vault[]> {
     .eq('user_id', userId);
 
   if (error) {
-    console.error('Failed to sync vaults from cloud:', error.message);
+    console.error('Failed to sync vaults from cloud');
     throw error;
   }
 
@@ -69,6 +69,7 @@ export async function syncVaultsFromCloud(userId: string): Promise<Vault[]> {
 
 /**
  * Upload vault entries to cloud
+ * Only uploads the encryptedPayload — never plaintext
  */
 export async function syncEntriesToCloud(entries: VaultEntry[], userId: string): Promise<void> {
   for (const entry of entries) {
@@ -78,16 +79,13 @@ export async function syncEntriesToCloud(entries: VaultEntry[], userId: string):
         id: entry.id,
         vault_id: entry.vaultId,
         user_id: userId,
-        title: entry.title,
-        username: entry.username,
-        encrypted_password: entry.password,
-        encrypted_notes: entry.notes || null,
-        url: entry.url || null,
+        // Upload ONLY the encrypted payload blob — never plaintext
+        encrypted_payload: entry.encryptedPayload || '',
         updated_at: new Date(entry.updatedAt).toISOString(),
       });
 
     if (error) {
-      console.error('Failed to sync entry:', error.message);
+      console.error('Failed to sync entry');
       throw error;
     }
   }
@@ -104,21 +102,21 @@ export async function syncEntriesFromCloud(vaultId: string, userId: string): Pro
     .eq('user_id', userId);
 
   if (error) {
-    console.error('Failed to sync entries from cloud:', error.message);
+    console.error('Failed to sync entries from cloud');
     throw error;
   }
 
   return (data || []).map(row => ({
     id: row.id,
     vaultId: row.vault_id,
-    title: row.title,
-    username: row.username,
-    password: row.encrypted_password,
-    notes: row.encrypted_notes || undefined,
-    url: row.url || undefined,
+    title: '',
+    username: '',
+    password: '',
+    notes: undefined,
+    url: undefined,
+    encryptedPayload: row.encrypted_payload,
     createdAt: new Date(row.created_at).getTime(),
     updatedAt: new Date(row.updated_at).getTime(),
-    lastAccessed: row.last_accessed ? new Date(row.last_accessed).getTime() : undefined,
   }));
 }
 
@@ -141,18 +139,12 @@ export async function updateLastSync(): Promise<void> {
  * Full sync: upload local changes and download remote changes
  */
 export async function fullSync(userId: string, masterKey: SecureKey): Promise<void> {
-  // Get local data
   const localVaults = await getVaults();
-
-  // Upload to cloud
   await syncVaultsToCloud(localVaults, userId);
 
-  // Download from cloud
   const cloudVaults = await syncVaultsFromCloud(userId);
 
-  // Sync entries for each vault
   for (const vault of cloudVaults) {
-    // FIX: Actually get entries for this vault instead of returning []
     const localEntries = await getEntriesForVault(vault.id, masterKey);
     await syncEntriesToCloud(localEntries, userId);
     await syncEntriesFromCloud(vault.id, userId);

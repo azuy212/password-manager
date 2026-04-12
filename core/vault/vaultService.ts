@@ -160,12 +160,13 @@ export async function createEntry(input: VaultEntryInput, masterKey: SecureKey):
     entries.push(newEntry);
     await AsyncStorage.setItem(ENTRIES_KEY, JSON.stringify(entries));
 
-    // Return the decrypted entry for immediate display
+    // Return the decrypted entry for immediate display, including the encryptedPayload for sync
     const decrypted = await decryptEntryContent(encryptedPayload, masterKey);
     decrypted.id = newEntry.id;
     decrypted.vaultId = newEntry.vaultId;
     decrypted.createdAt = newEntry.createdAt;
     decrypted.updatedAt = newEntry.updatedAt;
+    decrypted.encryptedPayload = encryptedPayload;
 
     return decrypted;
   });
@@ -219,6 +220,7 @@ export async function updateEntry(
     decrypted.vaultId = entries[index].vaultId;
     decrypted.createdAt = entries[index].createdAt;
     decrypted.updatedAt = entries[index].updatedAt;
+    decrypted.encryptedPayload = encryptedPayload;
 
     return decrypted;
   });
@@ -255,6 +257,7 @@ export async function getEntry(entryId: string, masterKey: SecureKey): Promise<V
     decrypted.vaultId = entry.vaultId;
     decrypted.createdAt = entry.createdAt;
     decrypted.updatedAt = entry.updatedAt;
+    decrypted.encryptedPayload = entry.encryptedPayload;
     return decrypted;
   } catch (e) {
     return null;

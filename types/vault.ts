@@ -1,6 +1,7 @@
 /**
  * A decrypted vault entry returned by the vault service.
  * All fields are PLAINTEXT (already decrypted).
+ * `encryptedPayload` is the raw encrypted blob for cloud sync.
  */
 export interface VaultEntry {
   id: string;
@@ -10,6 +11,7 @@ export interface VaultEntry {
   password: string;
   notes?: string;
   url?: string;
+  encryptedPayload?: string; // Raw encrypted blob for sync
   createdAt: number;
   updatedAt: number;
   lastAccessed?: number;
