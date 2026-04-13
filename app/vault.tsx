@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   StyleSheet,
@@ -10,7 +10,8 @@ import {
 } from 'react-native';
 import { FlatList } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getEntriesForVault } from '../core/vault/vaultService';
+import { getEntriesForVault, decryptVaultKey } from '../core/vault/vaultService';
+import { getLastSync, fullSync } from '../core/sync/syncService';
 import { useAppStore } from '../store/useAppStore';
 import type { VaultEntry } from '../types/vault';
 import { useTheme } from '../hooks/useTheme';
@@ -18,6 +19,7 @@ import { useIsDesktop } from '../hooks/useBreakpoint';
 import { spacing, radius, typography } from '../utils/themedStyles';
 import type { ThemeColors } from '../constants/Colors';
 import { InlineLoader } from '../components/InlineLoader';
+import { SyncStatusIndicator } from '../components/SyncStatusIndicator';
 import { WebLayout } from '../components/WebLayout';
 import { VaultSplitView } from '../components/VaultSplitView';
 
@@ -86,23 +88,42 @@ export default function VaultScreen() {
   const [entries, setEntries] = useState<VaultEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
-  const { masterKey } = useAppStore();
+  const { masterKey, userId, vaults, isSyncing, lastSyncedAt, setSyncing, setLastSyncedAt, setVaults } = useAppStore();
   const colors = useTheme();
   const insets = useSafeAreaInsets();
   const isDesktop = useIsDesktop();
 
+  // Load last sync time on mount
+  useEffect(() => {
+    getLastSync().then(ts => {
+      setLastSyncedAt(ts > 0 ? ts : null);
+    });
+  }, []);
+
   const loadEntries = useCallback(async () => {
     if (!params.vaultId || !masterKey) return;
+    const vault = vaults.find(v => v.id === params.vaultId);
+    if (!vault) return;
+
+    let vaultKey;
+    try {
+      vaultKey = await decryptVaultKey(vault.encryptedEncryptionKey, masterKey);
+    } catch {
+      Alert.alert('Error', 'Failed to decrypt vault key');
+      return;
+    }
+
     setIsLoading(true);
     try {
-      const data = await getEntriesForVault(params.vaultId as string, masterKey);
+      const data = await getEntriesForVault(params.vaultId as string, vaultKey);
       setEntries(data);
     } catch {
       Alert.alert('Error', 'Failed to load entries');
     } finally {
       setIsLoading(false);
+      vaultKey.destroy();
     }
-  }, [params.vaultId, masterKey]);
+  }, [params.vaultId, masterKey, vaults]);
 
   useFocusEffect(
     useCallback(() => {
@@ -123,6 +144,67 @@ export default function VaultScreen() {
       params: { vaultId: params.vaultId, entryId: entry.id },
     });
   }, [router, params.vaultId]);
+
+  // Use refs to avoid callback recreation issues during async operations
+  const vaultIdRef = useRef(params.vaultId as string);
+  const masterKeyRef = useRef(masterKey);
+  
+  useEffect(() => {
+    vaultIdRef.current = params.vaultId as string;
+    masterKeyRef.current = masterKey;
+  }, [params.vaultId, masterKey]);
+
+  const handleSync = useCallback(async () => {
+    console.log('[VaultSync] handleSync triggered');
+    const currentVaultId = vaultIdRef.current;
+    const currentMasterKey = masterKeyRef.current;
+
+    console.log('[VaultSync] vaultId:', currentVaultId, 'masterKey:', !!currentMasterKey, 'userId:', userId);
+
+    if (!currentMasterKey || !currentVaultId || !userId) {
+      console.log('[VaultSync] Early return - missing required values');
+      Alert.alert('Error', 'Vault is not unlocked');
+      return;
+    }
+
+    // Prevent duplicate syncs
+    if (isSyncing) {
+      console.log('[VaultSync] Already syncing, skipping');
+      return;
+    }
+
+    console.log('[VaultSync] Setting syncing to true');
+    setSyncing(true);
+    try {
+      console.log('[VaultSync] Calling fullSync with userId:', userId);
+
+      const result = await fullSync(userId, currentMasterKey);
+      console.log('[VaultSync] fullSync completed, syncedVaults:', result.syncedVaults, 'syncedEntries:', result.syncedEntries);
+      setVaults(result.mergedVaults);
+
+      // Reload entries for current vault
+      const vault = result.mergedVaults.find(v => v.id === currentVaultId);
+      console.log('[VaultSync] Found current vault:', !!vault);
+      if (vault) {
+        console.log('[VaultSync] Decrypting vault key and loading entries...');
+        const vaultKey = await decryptVaultKey(vault.encryptedEncryptionKey, currentMasterKey);
+        const data = await getEntriesForVault(currentVaultId, vaultKey);
+        console.log('[VaultSync] Loaded', data.length, 'entries');
+        setEntries(data);
+        vaultKey.destroy();
+      }
+
+      const newLastSync = Date.now();
+      setLastSyncedAt(newLastSync);
+      console.log('[VaultSync] Sync completed successfully');
+    } catch (error: any) {
+      console.error('[VaultSync] Error during sync:', error);
+      Alert.alert('Sync Failed', error.message || 'An error occurred during sync.');
+    } finally {
+      console.log('[VaultSync] Setting syncing to false');
+      setSyncing(false);
+    }
+  }, [userId, isSyncing, setSyncing, setLastSyncedAt, setVaults]);
 
   const styles = useMemo(
     () => createStyles(colors, insets),
@@ -152,7 +234,15 @@ export default function VaultScreen() {
         <View style={styles.container}>
           {/* Vault Header */}
           <View style={styles.vaultHeader}>
-            <Text style={styles.title} numberOfLines={1}>{vaultName}</Text>
+            <View style={styles.headerTop}>
+              <Text style={styles.title} numberOfLines={1}>{vaultName}</Text>
+              <SyncStatusIndicator
+                isSyncing={isSyncing}
+                lastSyncedAt={lastSyncedAt}
+                syncError={null}
+                onSync={handleSync}
+              />
+            </View>
             <Text style={styles.entryCount}>
               {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
             </Text>
@@ -209,6 +299,12 @@ const createStyles = (colors: ThemeColors, insets: ReturnType<typeof useSafeArea
       borderBottomWidth: 1,
       borderBottomColor: colors.border,
       backgroundColor: colors.surface,
+    },
+    headerTop: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: spacing.xs,
     },
     title: {
       ...typography.h3,

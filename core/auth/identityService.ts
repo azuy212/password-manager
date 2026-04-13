@@ -5,6 +5,8 @@ import { uuidv4 } from '@/utils/uuid';
 import CryptoNative from 'crypto-native';
 import { deriveMasterKey, encryptString, decryptString, SecureKey } from '@/core/crypto';
 import type { Identity } from '@/types/identity';
+import { supabaseSignUp, supabaseSignIn, supabaseSignOut } from './supabaseAuthService';
+import { supabase } from '../../services/supabaseClient';
 
 const IDENTITY_KEY = 'identity';
 const MAX_UNLOCK_ATTEMPTS = 10;
@@ -16,9 +18,13 @@ const VAULTS_KEY = 'vaults';
 const ENTRIES_KEY = 'vault_entries';
 
 /**
- * Create a new identity with keypair
+ * Create a new identity with keypair and register with Supabase Auth.
+ * Returns the identity, masterKey, and the Supabase userId.
  */
-export async function createIdentity(password: string): Promise<{ identity: Identity; masterKey: SecureKey }> {
+export async function createIdentity(
+  email: string,
+  password: string
+): Promise<{ identity: Identity; masterKey: SecureKey; supabaseUserId: string } | { error: string }> {
   const id = uuidv4();
 
   // Generate keypair
@@ -40,9 +46,53 @@ export async function createIdentity(password: string): Promise<{ identity: Iden
     salt,
   };
 
-  // Store identity securely
+  // Store identity locally
   await secureStorage.setItem(IDENTITY_KEY, JSON.stringify(identity));
   await secureStorage.deleteItem(ATTEMPT_COUNT_KEY); // Reset attempts
+
+  // Sign up with Supabase Auth and create the users row
+  const authResult = await supabaseSignUp(email, password, publicKey, salt);
+  if (!authResult.success) {
+    // Rollback: clear local identity since Supabase signup failed
+    await secureStorage.deleteItem(IDENTITY_KEY);
+    return { error: authResult.error || 'Failed to create Supabase account' };
+  }
+
+  return { identity, masterKey: encryptionKey, supabaseUserId: authResult.userId! };
+}
+
+/**
+ * Bootstrap a second device: derive master key from cloud-fetched salt,
+ * then create a local identity so future unlocks work offline.
+ */
+export async function bootstrapIdentityFromCloud(
+  password: string,
+  salt: number[],
+  publicKey: number[],
+  supabaseUserId: string
+): Promise<{ identity: Identity; masterKey: SecureKey } | { error: string }> {
+  // Generate a NEW Ed25519 keypair for this device
+  const { privateKey } = await CryptoNative.generateKeyPair();
+
+  // Derive master key from cloud salt
+  const { key: encryptionKey } = await deriveMasterKey(password, salt);
+
+  // Encrypt this device's private key
+  const encryptedPrivateKey = await encryptString(
+    String.fromCharCode(...privateKey),
+    encryptionKey
+  );
+
+  const identity: Identity = {
+    id: supabaseUserId,
+    publicKey,
+    encryptedPrivateKey,
+    salt,
+  };
+
+  // Store locally so future unlocks work
+  await secureStorage.setItem(IDENTITY_KEY, JSON.stringify(identity));
+  await secureStorage.deleteItem(ATTEMPT_COUNT_KEY);
 
   return { identity, masterKey: encryptionKey };
 }
@@ -57,35 +107,74 @@ export async function getIdentity(): Promise<Identity | null> {
 }
 
 /**
- * Unlock identity by deriving master key
- * Returns null if password is wrong or account is locked out
+ * Unlock identity by deriving master key.
+ * Does NOT handle Supabase session — that must be established by the caller first.
+ * Returns null if password is wrong or account is locked out.
+ * Returns { error: string } if data is corrupted or tampered.
  */
-export async function unlockIdentity(password: string): Promise<SecureKey | null> {
+export async function unlockIdentity(password: string): Promise<SecureKey | null | { error: string }> {
+  console.log('[identityService] unlockIdentity called');
   const identity = await getIdentity();
-  if (!identity) return null;
+  if (!identity) {
+    console.log('[identityService] No identity found');
+    return null;
+  }
 
   // Check lockout
   const isLockedOut = await checkLockout();
-  if (isLockedOut) return null;
+  if (isLockedOut) {
+    console.log('[identityService] Account is locked out');
+    return { error: 'Account is temporarily locked. Please try again later.' };
+  }
 
   try {
+    console.log('[identityService] Deriving master key from password + stored salt...');
     // Derive key with stored salt
     const { key } = await deriveMasterKey(password, identity.salt);
+    console.log('[identityService] Master key derived, attempting to decrypt private key...');
 
     // Try to decrypt private key to verify password
     const decrypted = await decryptString(identity.encryptedPrivateKey, key);
+    console.log('[identityService] Decryption result valid:', !!decrypted);
 
     if (decrypted) {
       // Success — reset attempt count
+      console.log('[identityService] Password verified, resetting attempts');
       await secureStorage.deleteItem(ATTEMPT_COUNT_KEY);
       return key;
     }
-  } catch {
-    // Wrong password — increment attempts
-    await incrementUnlockAttempts();
-  }
 
-  return null;
+    // Decryption produced something but it wasn't valid — wrong password
+    console.log('[identityService] Decryption invalid — wrong password, destroying key');
+    key.destroy();
+    return null;
+  } catch (err: any) {
+    const message = err?.message || '';
+    console.error('[identityService] Decryption error:', message);
+    // Data corruption/tampering errors should be surfaced to the user
+    if (message.includes('Missing HMAC') || message.includes('corrupted') || message.includes('tampered')) {
+      return { error: 'Vault data is corrupted. This can happen after an app update or data migration. You may need to reset your vault.' };
+    }
+    // Unknown errors — surface to user
+    if (message.includes('Missing') || message.includes('invalid') || message.includes('failed')) {
+      return { error: `Unlock failed: ${message}` };
+    }
+    // For other errors, still increment attempts but don't expose internals
+    await incrementUnlockAttempts();
+    return null;
+  }
+}
+
+/**
+ * Get the Supabase user ID from the current session.
+ * Returns null if not authenticated.
+ */
+export async function getStoredSupabaseUserId(): Promise<string | null> {
+  console.log('[identityService] getStoredSupabaseUserId called');
+  const { data } = await supabase.auth.getSession();
+  const userId = data.session?.user?.id ?? null;
+  console.log('[identityService] getStoredSupabaseUserId result:', userId);
+  return userId;
 }
 
 /**
@@ -95,12 +184,17 @@ export async function getDecryptedPrivateKey(password: string): Promise<number[]
   const identity = await getIdentity();
   if (!identity) return null;
 
+  const result = await unlockIdentity(password);
+  if (!result || 'error' in result) return null;
+  const masterKey = result;
+
+  // Decrypt the private key
   try {
-    const { key } = await deriveMasterKey(password, identity.salt);
-    const decrypted = await decryptString(identity.encryptedPrivateKey, key);
-    key.destroy(); // Clean up key after use
+    const decrypted = await decryptString(identity.encryptedPrivateKey, masterKey);
+    masterKey.destroy(); // Clean up key after use
     return Array.from(decrypted).map(c => c.charCodeAt(0));
   } catch {
+    masterKey.destroy();
     return null;
   }
 }
@@ -115,9 +209,17 @@ export async function hasIdentity(): Promise<boolean> {
 
 /**
  * Clear identity AND all vault data (full reset)
+ * Also signs out from Supabase and deletes cloud data.
  */
 export async function clearIdentity(): Promise<void> {
   const errors: Error[] = [];
+
+  // Sign out from Supabase
+  try {
+    await supabaseSignOut();
+  } catch (e) {
+    errors.push(e instanceof Error ? e : new Error('Failed to sign out from Supabase'));
+  }
 
   // Clear SecureStore
   try {
@@ -145,6 +247,8 @@ export async function clearIdentity(): Promise<void> {
 
 /**
  * Change password — re-encrypt all data with new password
+ * Also updates the Supabase Auth password.
+ * Tries Supabase update FIRST so we can rollback if it fails.
  */
 export async function changePassword(
   oldPassword: string,
@@ -156,9 +260,17 @@ export async function changePassword(
 
   // Verify old password
   const oldKey = await unlockIdentity(oldPassword);
-  if (!oldKey) return null;
+  if (!oldKey || 'error' in oldKey) return null;
 
-  // Derive new key
+  // Try Supabase password update FIRST (can be retried, no local state changed yet)
+  const { error: supabaseError } = await supabase.auth.updateUser({ password: newPassword });
+  if (supabaseError) {
+    oldKey.destroy();
+    console.error('Failed to update Supabase password:', supabaseError);
+    return null;
+  }
+
+  // Now derive new key and re-encrypt locally
   const { key: newKey, salt: newSalt } = await deriveMasterKey(newPassword);
 
   // Re-encrypt the private key with the new password

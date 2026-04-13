@@ -1,13 +1,15 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Alert, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { clearIdentity } from '@/core/auth/identityService';
+import { fullSync, getLastSync } from '@/core/sync/syncService';
 import { useAppStore } from '@/store/useAppStore';
 import { useTheme } from '@/hooks/useTheme';
 import { spacing, radius, typography } from '@/utils/themedStyles';
 import { LoadingOverlay } from '@/components/LoadingOverlay';
+import { SyncStatusIndicator } from '@/components/SyncStatusIndicator';
 import { WebLayout } from '@/components/WebLayout';
 import { ScrollView } from 'react-native-gesture-handler';
 
@@ -67,10 +69,52 @@ function SettingItem({ icon, label, onPress, danger, colors }: SettingItemProps)
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { reset } = useAppStore();
+  const { reset, masterKey, userId, isSyncing, lastSyncedAt, setSyncing, setLastSyncedAt, setVaults, setEntries, activeVault } = useAppStore();
   const colors = useTheme();
   const insets = useSafeAreaInsets();
   const [isResetting, setIsResetting] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState<number | null>(null);
+
+  useEffect(() => {
+    getLastSync().then(ts => {
+      setLastSyncTime(ts > 0 ? ts : null);
+      setLastSyncedAt(ts > 0 ? ts : null);
+    });
+  }, []);
+
+  const handleSync = async () => {
+    if (!masterKey || !userId) {
+      Alert.alert('Error', 'Vault is not unlocked');
+      return;
+    }
+
+    setSyncing(true);
+    try {
+      const result = await fullSync(userId, masterKey);
+      // Update the Zustand store with merged vaults
+      setVaults(result.mergedVaults);
+
+      // If an active vault is set, reload its entries from AsyncStorage
+      if (activeVault) {
+        const { getEntriesForVault, decryptVaultKey } = await import('@/core/vault/vaultService');
+        const vaultKey = await decryptVaultKey(activeVault.encryptedEncryptionKey, masterKey);
+        const entries = await getEntriesForVault(activeVault.id, vaultKey);
+        setEntries(entries);
+        vaultKey.destroy();
+      }
+
+      // Update last sync time
+      const newLastSync = Date.now();
+      setLastSyncTime(newLastSync);
+      setLastSyncedAt(newLastSync);
+
+      Alert.alert('Sync Complete', `Synced ${result.syncedVaults} vault(s) and ${result.syncedEntries} entr${result.syncedEntries === 1 ? 'y' : 'ies'}.`);
+    } catch (error: any) {
+      Alert.alert('Sync Failed', error.message || 'An error occurred during sync.');
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const handleReset = () => {
     Alert.alert(
@@ -131,17 +175,19 @@ export default function SettingsScreen() {
       <LoadingOverlay visible={isResetting} message="Resetting vault..." />
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Header */}
-        <Text style={styles.headerTitle}>Settings</Text>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.lg, paddingHorizontal: spacing.sm }}>
+          <Text style={[styles.headerTitle, { marginBottom: 0 }]}>Settings</Text>
+          <SyncStatusIndicator
+            isSyncing={isSyncing}
+            lastSyncedAt={lastSyncTime}
+            syncError={null}
+            onSync={handleSync}
+          />
+        </View>
 
         {/* Security Section */}
         <Text style={styles.sectionHeader}>Security</Text>
         <View style={styles.section}>
-          <SettingItem
-            icon="sync"
-            label="Sync Now"
-            onPress={() => {}}
-            colors={colors}
-          />
           <SettingItem
             icon="time"
             label="Auto-Lock Timer"

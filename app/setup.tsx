@@ -21,6 +21,7 @@ import { spacing, radius, typography } from '../utils/themedStyles';
 import type { ThemeColors } from '../constants/Colors';
 
 export default function SetupScreen() {
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -40,6 +41,11 @@ export default function SetupScreen() {
   }, [fadeAnim]);
 
   const handleCreate = useCallback(async () => {
+    if (!email.trim()) {
+      Alert.alert('Error', 'Please enter your email');
+      return;
+    }
+
     if (!password.trim() || !confirmPassword.trim()) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
@@ -58,10 +64,15 @@ export default function SetupScreen() {
     setIsSubmitting(true);
     setLoading(true);
     try {
-      const { identity, masterKey } = await createIdentity(password);
+      const result = await createIdentity(email, password);
+      if ('error' in result) {
+        Alert.alert('Error', result.error);
+        return;
+      }
+      const { identity, masterKey, supabaseUserId } = result;
       setIdentity(identity);
       setMasterKey(masterKey);
-      setUserId(identity.id);
+      setUserId(supabaseUserId);
       setAuthenticated(true);
       router.replace('/(tabs)');
     } catch (error: unknown) {
@@ -71,7 +82,7 @@ export default function SetupScreen() {
       setLoading(false);
       setIsSubmitting(false);
     }
-  }, [password, confirmPassword, setLoading, setIdentity, setMasterKey, setUserId, setAuthenticated, router]);
+  }, [email, password, confirmPassword, setLoading, setIdentity, setMasterKey, setUserId, setAuthenticated, router]);
 
   const styles = useMemo(
     () => createStyles(colors, insets),
@@ -96,6 +107,16 @@ export default function SetupScreen() {
         <Text style={styles.subtitle}>
           Create a strong master password. This password cannot be recovered if forgotten.
         </Text>
+
+        <TextInput
+          style={styles.input}
+          placeholder="Email (for cloud sync)"
+          placeholderTextColor={colors.placeholder}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          value={email}
+          onChangeText={setEmail}
+        />
 
         <TextInput
           style={styles.input}

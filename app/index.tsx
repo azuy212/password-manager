@@ -15,7 +15,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useUnlock } from '../core/auth/useUnlock';
-import { getIdentity, clearIdentity } from '../core/auth/identityService';
+import { getIdentity, clearIdentity, getStoredSupabaseUserId } from '../core/auth/identityService';
 import { useAppStore } from '../store/useAppStore';
 import { useTheme } from '../hooks/useTheme';
 import { useIsDesktop } from '../hooks/useBreakpoint';
@@ -23,6 +23,7 @@ import { spacing, radius, typography } from '../utils/themedStyles';
 import type { ThemeColors } from '../constants/Colors';
 
 export default function UnlockScreen() {
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { unlock } = useUnlock();
@@ -35,50 +36,75 @@ export default function UnlockScreen() {
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    console.log('[Unlock] Component mounted, checking identity...');
     Animated.timing(fadeAnim, {
       toValue: 1,
       duration: 400,
       useNativeDriver: true,
     }).start();
 
+    // Always show unlock screen — if no local identity exists, the unlock flow
+    // will attempt cloud bootstrap (second device). Only redirect to setup if
+    // the Supabase session doesn't exist either (truly new user).
     getIdentity().then(identity => {
-      if (!identity) {
-        router.replace('/setup');
-      } else {
+      console.log('[Unlock] Local identity found:', !!identity);
+      if (identity) {
         setHasIdentity(true);
+      } else {
+        console.log('[Unlock] No local identity, checking cloud session...');
+        // No local identity — check if there's a persisted Supabase session
+        getStoredSupabaseUserId().then(uid => {
+          console.log('[Unlock] Stored Supabase userId:', uid);
+          if (uid) {
+            // User has a cloud account — show unlock with email hint
+            setHasIdentity(true);
+          } else {
+            // Truly new — no local identity and no cloud session
+            setHasIdentity(false);
+          }
+        });
       }
     });
   }, [fadeAnim, router]);
 
   const handleSubmit = useCallback(async () => {
-    if (!password.trim() || isSubmitting) {
-      Alert.alert('Error', 'Unable to unlock vault');
+    if (!email.trim() || !password.trim() || isSubmitting) {
+      Alert.alert('Error', 'Please enter your email and password');
       return;
     }
 
+    console.log('[Unlock] Submitting unlock for email:', email.trim());
     setIsSubmitting(true);
     setLoading(true);
     try {
-      const masterKey = await unlock(password);
-      if (masterKey) {
-        const identity = await getIdentity();
-        if (identity) {
-          setIdentity(identity);
-          setUserId(identity.id);
-        }
-        setMasterKey(masterKey);
-        setAuthenticated(true);
-        router.replace('/(tabs)');
-      } else {
-        Alert.alert('Error', 'Unable to unlock vault');
+      console.log('[Unlock] Calling unlock()...');
+      const result = await unlock(email, password);
+      console.log('[Unlock] unlock() returned, has error:', 'error' in result);
+      if ('error' in result) {
+        console.error('[Unlock] Unlock error:', result.error);
+        Alert.alert('Error', result.error);
+        return;
       }
-    } catch {
+      const { masterKey, supabaseUserId } = result;
+      console.log('[Unlock] Setting store values, identity:', !!masterKey, 'userId:', supabaseUserId);
+      const identity = await getIdentity();
+      if (identity) {
+        setIdentity(identity);
+      }
+      setUserId(supabaseUserId);
+      setMasterKey(masterKey);
+      console.log('[Unlock] Navigating to tabs...');
+      setAuthenticated(true);
+      router.replace('/(tabs)');
+    } catch (err: any) {
+      console.error('[Unlock] Unexpected exception during unlock:', err);
       Alert.alert('Error', 'Unable to unlock vault');
     } finally {
+      console.log('[Unlock] Clearing loading state');
       setLoading(false);
       setIsSubmitting(false);
     }
-  }, [password, isSubmitting, unlock, setLoading, setIdentity, setUserId, setMasterKey, setAuthenticated, router]);
+  }, [email, password, isSubmitting, unlock, setLoading, setIdentity, setUserId, setMasterKey, setAuthenticated, router]);
 
   const styles = useMemo(
     () => createStyles(colors, insets),
@@ -119,12 +145,22 @@ export default function UnlockScreen() {
 
         <TextInput
           style={styles.input}
+          placeholder="Email"
+          placeholderTextColor={colors.placeholder}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          value={email}
+          onChangeText={setEmail}
+          autoFocus
+        />
+
+        <TextInput
+          style={styles.input}
           placeholder="Master Password"
           placeholderTextColor={colors.placeholder}
           secureTextEntry
           value={password}
           onChangeText={setPassword}
-          autoFocus
           returnKeyType="done"
           onSubmitEditing={handleSubmit}
         />
@@ -156,6 +192,7 @@ export default function UnlockScreen() {
                   onPress: async () => {
                     await clearIdentity();
                     setPassword('');
+                    setEmail('');
                     router.replace('/setup');
                   },
                 },
@@ -165,6 +202,15 @@ export default function UnlockScreen() {
         >
           <Text style={styles.resetButtonText}>Forgot Password? Reset Vault</Text>
         </TouchableOpacity>
+
+        {!hasIdentity && (
+          <TouchableOpacity
+            style={styles.createButton}
+            onPress={() => router.push('/setup')}
+          >
+            <Text style={styles.createButtonText}>New? Create Account</Text>
+          </TouchableOpacity>
+        )}
       </Animated.View>
       </KeyboardAvoidingView>
     </View>
@@ -268,5 +314,15 @@ const createStyles = (colors: ThemeColors, insets: ReturnType<typeof useSafeArea
       color: colors.danger,
       fontSize: 14,
       fontWeight: '500',
+    },
+    createButton: {
+      marginTop: spacing.sm,
+      padding: spacing.md,
+      alignItems: 'center',
+    },
+    createButtonText: {
+      color: colors.primary,
+      fontSize: 14,
+      fontWeight: '600',
     },
   });

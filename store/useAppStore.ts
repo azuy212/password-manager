@@ -20,6 +20,11 @@ interface AppState {
   isLoading: boolean;
   error: string | null;
 
+  // Sync state
+  isSyncing: boolean;
+  lastSyncedAt: number | null;
+  syncError: string | null;
+
   // Actions
   setAuthenticated: (auth: boolean) => void;
   setIdentity: (identity: Identity | null) => void;
@@ -33,6 +38,10 @@ interface AppState {
 
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
+
+  setSyncing: (syncing: boolean) => void;
+  setLastSyncedAt: (timestamp: number | null) => void;
+  setSyncError: (error: string | null) => void;
 
   // Lock — destroys master key, resets to pre-auth state
   lock: () => void;
@@ -52,6 +61,9 @@ const initialState = {
   activeEntry: null,
   isLoading: false,
   error: null,
+  isSyncing: false,
+  lastSyncedAt: null,
+  syncError: null,
 };
 
 function destroyMasterKey(state: AppState) {
@@ -83,6 +95,10 @@ export const useAppStore = create<AppState>()(
 
     setLoading: (loading) => set({ isLoading: loading }),
     setError: (error) => set({ error }),
+
+    setSyncing: (syncing) => set({ isSyncing: syncing, syncError: syncing ? null : null }),
+    setLastSyncedAt: (timestamp) => set({ lastSyncedAt: timestamp }),
+    setSyncError: (error) => set({ syncError: error }),
 
     lock: () =>
       set((state) => {

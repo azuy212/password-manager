@@ -2,6 +2,8 @@
  * A decrypted vault entry returned by the vault service.
  * All fields are PLAINTEXT (already decrypted).
  * `encryptedPayload` is the raw encrypted blob for cloud sync.
+ * `version` tracks server-side revision for optimistic locking.
+ * `deletedAt` is set when the entry is soft-deleted locally (pending cloud sync).
  */
 export interface VaultEntry {
   id: string;
@@ -12,6 +14,8 @@ export interface VaultEntry {
   notes?: string;
   url?: string;
   encryptedPayload?: string; // Raw encrypted blob for sync
+  version?: number;
+  deletedAt?: number;
   createdAt: number;
   updatedAt: number;
   lastAccessed?: number;
@@ -21,9 +25,19 @@ export interface Vault {
   id: string;
   name: string;
   encryptedEncryptionKey: string;
+  version?: number;
+  deletedAt?: number;
   createdAt: number;
   updatedAt: number;
 }
+
+/**
+ * Input for creating a vault — only name is user-provided.
+ * `encryptedEncryptionKey`, `version`, `deletedAt` are set internally.
+ */
+export type VaultInput = {
+  name: string;
+};
 
 /**
  * Input for creating or updating a vault entry.
@@ -37,5 +51,3 @@ export type VaultEntryInput = {
   url?: string;
   notes?: string;
 };
-
-export type VaultInput = Omit<Vault, 'id' | 'createdAt' | 'updatedAt'>;

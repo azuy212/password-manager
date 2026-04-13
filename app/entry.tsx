@@ -16,7 +16,7 @@ import {
 import { ScrollView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { ThemeColors } from '../constants/Colors';
-import { createEntry, deleteEntry, getEntry, updateEntry } from '../core/vault/vaultService';
+import { createEntry, deleteEntry, getEntry, updateEntry, decryptVaultKey } from '../core/vault/vaultService';
 import { useTheme } from '../hooks/useTheme';
 import { useAppStore } from '../store/useAppStore';
 import type { VaultEntryInput } from '../types/vault';
@@ -25,7 +25,7 @@ import { radius, spacing, typography } from '../utils/themedStyles';
 export default function EntryScreen() {
   const params = useLocalSearchParams<{ vaultId: string; entryId?: string }>();
   const router = useRouter();
-  const { masterKey } = useAppStore();
+  const { masterKey, vaults } = useAppStore();
   const colors = useTheme();
   const insets = useSafeAreaInsets();
 
@@ -57,20 +57,28 @@ export default function EntryScreen() {
     if (!params.entryId || !masterKey) return;
     setIsLoadingEntry(true);
     try {
-      const entry = await getEntry(params.entryId, masterKey);
-      if (entry) {
-        setTitle(entry.title);
-        setUsername(entry.username);
-        setPassword(entry.password || '');
-        setNotes(entry.notes || '');
-        setUrl(entry.url || '');
+      const vault = vaults.find(v => v.id === params.vaultId);
+      if (!vault) { setIsLoadingEntry(false); return; }
+
+      const vaultKey = await decryptVaultKey(vault.encryptedEncryptionKey, masterKey);
+      try {
+        const entry = await getEntry(params.entryId as string, vaultKey);
+        if (entry) {
+          setTitle(entry.title);
+          setUsername(entry.username);
+          setPassword(entry.password || '');
+          setNotes(entry.notes || '');
+          setUrl(entry.url || '');
+        }
+      } finally {
+        vaultKey.destroy();
       }
     } catch {
       Alert.alert('Error', 'Failed to load entry');
     } finally {
       setIsLoadingEntry(false);
     }
-  }, [params.entryId, masterKey]);
+  }, [params.entryId, params.vaultId, masterKey, vaults]);
 
   const handleSave = useCallback(async () => {
     if (!title.trim() || !username.trim()) {
@@ -87,19 +95,30 @@ export default function EntryScreen() {
 
     setIsSaving(true);
     try {
-      const input: VaultEntryInput = {
-        vaultId: params.vaultId as string,
-        title,
-        username,
-        password,
-        url: url || undefined,
-        notes: notes.trim() || undefined,
-      };
+      const vault = vaults.find(v => v.id === params.vaultId);
+      if (!vault) {
+        Alert.alert('Error', 'Vault not found');
+        return;
+      }
 
-      if (params.entryId) {
-        await updateEntry(params.entryId, input, masterKey);
-      } else {
-        await createEntry(input, masterKey);
+      const vaultKey = await decryptVaultKey(vault.encryptedEncryptionKey, masterKey);
+      try {
+        const input: VaultEntryInput = {
+          vaultId: params.vaultId as string,
+          title,
+          username,
+          password,
+          url: url || undefined,
+          notes: notes.trim() || undefined,
+        };
+
+        if (params.entryId) {
+          await updateEntry(params.entryId, input, vaultKey);
+        } else {
+          await createEntry(input, vaultKey);
+        }
+      } finally {
+        vaultKey.destroy();
       }
 
       router.back();

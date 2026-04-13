@@ -55,6 +55,8 @@ export type Database = {
           user_id: string;
           name: string;
           encrypted_encryption_key: string;
+          version: number;
+          deleted_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -63,6 +65,8 @@ export type Database = {
           user_id: string;
           name: string;
           encrypted_encryption_key: string;
+          version?: number;
+          deleted_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -71,6 +75,8 @@ export type Database = {
           user_id?: string;
           name?: string;
           encrypted_encryption_key?: string;
+          version?: number;
+          deleted_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -79,36 +85,27 @@ export type Database = {
         Row: {
           id: string;
           vault_id: string;
-          user_id: string;
-          title: string;
-          username: string;
-          encrypted_password: string;
-          encrypted_notes: string | null;
-          url: string | null;
+          encrypted_payload: string;
+          version: number;
+          deleted_at: string | null;
           created_at: string;
           updated_at: string;
         };
         Insert: {
           id?: string;
           vault_id: string;
-          user_id: string;
-          title: string;
-          username: string;
-          encrypted_password: string;
-          encrypted_notes?: string | null;
-          url?: string | null;
+          encrypted_payload: string;
+          version?: number;
+          deleted_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
         Update: {
           id?: string;
           vault_id?: string;
-          user_id?: string;
-          title?: string;
-          username?: string;
-          encrypted_password?: string;
-          encrypted_notes?: string | null;
-          url?: string | null;
+          encrypted_payload?: string;
+          version?: number;
+          deleted_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -121,6 +118,8 @@ export type Database = {
           shared_with_id: string;
           encrypted_key: string;
           created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
         };
         Insert: {
           id?: string;
@@ -129,6 +128,8 @@ export type Database = {
           shared_with_id: string;
           encrypted_key: string;
           created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
         };
         Update: {
           id?: string;
@@ -137,6 +138,8 @@ export type Database = {
           shared_with_id?: string;
           encrypted_key?: string;
           created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
         };
       };
     };

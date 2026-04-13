@@ -172,7 +172,6 @@ export default function VaultsScreen() {
       await createVault(
         {
           name: newVaultName.trim(),
-          encryptedEncryptionKey: '',
         },
         masterKey
       );

@@ -1,7 +1,5 @@
 import { supabase } from '../../services/supabaseClient';
-import CryptoNative from 'crypto-native';
 
-import { encryptString } from '../crypto';
 import type { Database } from '../../services/supabaseClient';
 
 export interface ShareResult {
@@ -15,14 +13,9 @@ export interface SharedEntryWithVaultEntry {
   owner_id: string;
   shared_with_id: string;
   encrypted_key: string;
-  vault_entries: {
-    id: string;
-    title: string;
-    username: string;
-    encrypted_password: string;
-    encrypted_notes: string | null;
-    url: string | null;
-  } | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
 }
 
 export interface SharedEntryWithUser {
@@ -56,11 +49,13 @@ export async function getUserPublicKeyByEmail(email: string): Promise<number[] |
 
 /**
  * Share a vault entry with another user
- * 
+ *
  * Flow:
  * 1. Fetch recipient's public key
  * 2. Encrypt the entry's key with recipient's public key
- * 3. Upload to shared_entries table
+ * 3. Upload to shared_entries table (key wrapper only)
+ *    The actual encrypted_payload stays in vault_entries — recipient
+ *    accesses it via the shared_entries RLS join path.
  */
 export async function shareEntry(
   entryId: string,
@@ -75,11 +70,11 @@ export async function shareEntry(
       .select('id')
       .eq('email', recipientEmail)
       .single();
-    
+
     if (recipientError || !recipientData) {
       return { success: false, error: 'User not found' };
     }
-    
+
     // Create share record
     const { error } = await supabase
       .from('shared_entries')
@@ -89,11 +84,14 @@ export async function shareEntry(
         shared_with_id: recipientData.id,
         encrypted_key: encryptedKey,
       });
-    
+
     if (error) {
+      if (error.code === '23505') { // unique_violation
+        return { success: false, error: 'Already shared with this user' };
+      }
       return { success: false, error: error.message };
     }
-    
+
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message };
@@ -101,29 +99,21 @@ export async function shareEntry(
 }
 
 /**
- * Get entries shared with current user
+ * Get entries shared with current user.
+ * Recipients access the actual encrypted_payload from vault_entries
+ * via the merged RLS policy (shared-with path).
  */
 export async function getSharedWithMe(userId: string): Promise<SharedEntryWithVaultEntry[]> {
   const { data, error } = await supabase
     .from('shared_entries')
-    .select(`
-      *,
-      vault_entries (
-        id,
-        title,
-        username,
-        encrypted_password,
-        encrypted_notes,
-        url
-      )
-    `)
+    .select('*')
     .eq('shared_with_id', userId);
-  
+
   if (error) {
     console.error('Failed to fetch shared entries:', error);
     return [];
   }
-  
+
   return data || [];
 }
 

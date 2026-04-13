@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -18,9 +18,11 @@ import * as Clipboard from 'expo-clipboard';
 import { useTheme } from '@/hooks/useTheme';
 import { spacing, radius, typography } from '@/utils/themedStyles';
 import type { VaultEntry } from '@/types/vault';
-import { createEntry, updateEntry, deleteEntry } from '@/core/vault/vaultService';
+import { createEntry, updateEntry, deleteEntry, decryptVaultKey } from '@/core/vault/vaultService';
+import { getLastSync } from '@/core/sync/syncService';
 import { useAppStore } from '@/store/useAppStore';
 import { CopyableField } from '@/components/CopyableField';
+import { SyncStatusIndicator } from '@/components/SyncStatusIndicator';
 
 const ENTRY_LIST_WIDTH = 320;
 
@@ -55,11 +57,19 @@ export function VaultSplitView({
   entries,
   isLoading,
   onAddEntry,
+  InlineLoader,
 }: VaultSplitViewProps) {
   const colors = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { masterKey } = useAppStore();
+  const { masterKey, vaults, isSyncing, lastSyncedAt, setSyncing, setLastSyncedAt, setVaults } = useAppStore();
+
+  // Load last sync time on mount
+  useEffect(() => {
+    getLastSync().then(ts => {
+      setLastSyncedAt(ts > 0 ? ts : null);
+    });
+  }, []);
 
   const [selectedEntry, setSelectedEntry] = useState<VaultEntry | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -68,6 +78,51 @@ export function VaultSplitView({
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Use refs to avoid callback recreation issues during async operations
+  const vaultIdRef = useRef(vaultId);
+  const masterKeyRef = useRef(masterKey);
+  
+  useEffect(() => {
+    vaultIdRef.current = vaultId;
+    masterKeyRef.current = masterKey;
+  }, [vaultId, masterKey]);
+
+  const handleSync = useCallback(async () => {
+    const currentVaultId = vaultIdRef.current;
+    const currentMasterKey = masterKeyRef.current;
+    
+    if (!currentMasterKey || !currentVaultId) {
+      Alert.alert('Error', 'Vault is not unlocked');
+      return;
+    }
+
+    // Prevent duplicate syncs
+    if (useAppStore.getState().isSyncing) {
+      return;
+    }
+
+    setSyncing(true);
+    try {
+      const { fullSync } = await import('@/core/sync/syncService');
+      const userId = useAppStore.getState().userId;
+      if (!userId) {
+        Alert.alert('Error', 'User ID not found');
+        return;
+      }
+
+      const result = await fullSync(userId, currentMasterKey);
+      setVaults(result.mergedVaults);
+      onAddEntry();
+
+      const newLastSync = Date.now();
+      setLastSyncedAt(newLastSync);
+    } catch (error: any) {
+      Alert.alert('Sync Failed', error.message || 'An error occurred during sync.');
+    } finally {
+      setSyncing(false);
+    }
+  }, [setSyncing, setLastSyncedAt, setVaults, onAddEntry]);
 
   // Load entry data when selected
   const handleSelectEntry = useCallback((entry: VaultEntry) => {
@@ -101,21 +156,32 @@ export function VaultSplitView({
     }
     if (isSaving) return;
 
+    const vault = vaults.find(v => v.id === vaultId);
+    if (!vault) {
+      Alert.alert('Error', 'Vault not found');
+      return;
+    }
+
     setIsSaving(true);
     try {
-      const input = {
-        vaultId,
-        title: formData.title,
-        username: formData.username,
-        password: formData.password,
-        url: formData.url || undefined,
-        notes: formData.notes.trim() || undefined,
-      };
+      const vaultKey = await decryptVaultKey(vault.encryptedEncryptionKey, masterKey);
+      try {
+        const input = {
+          vaultId,
+          title: formData.title,
+          username: formData.username,
+          password: formData.password,
+          url: formData.url || undefined,
+          notes: formData.notes.trim() || undefined,
+        };
 
-      if (selectedEntry) {
-        await updateEntry(selectedEntry.id, input, masterKey);
-      } else {
-        await createEntry(input, masterKey);
+        if (selectedEntry) {
+          await updateEntry(selectedEntry.id, input, vaultKey);
+        } else {
+          await createEntry(input, vaultKey);
+        }
+      } finally {
+        vaultKey.destroy();
       }
 
       setIsEditing(false);
@@ -176,10 +242,20 @@ export function VaultSplitView({
       {/* Entry List Pane */}
       <View style={styles.listPane}>
         <View style={styles.listHeader}>
-          <Text style={styles.listTitle} numberOfLines={1}>{vaultName}</Text>
+          <SyncStatusIndicator
+            isSyncing={isSyncing}
+            lastSyncedAt={lastSyncedAt}
+            syncError={null}
+            onSync={handleSync}
+          />
           <Pressable style={styles.addButton} onPress={handleNewEntry} accessibilityRole="button" accessibilityLabel="Add new entry">
             <Ionicons name="add" size={20} color={colors.accent} />
           </Pressable>
+        </View>
+
+        {/* Vault Name */}
+        <View style={styles.vaultNameContainer}>
+          <Text style={styles.vaultName} numberOfLines={1}>{vaultName}</Text>
         </View>
 
         {/* Search */}
@@ -605,10 +681,13 @@ function createStyles(colors: ReturnType<typeof useTheme>, insets: ReturnType<ty
       paddingTop: spacing.md,
       paddingBottom: spacing.sm,
     },
-    listTitle: {
+    vaultNameContainer: {
+      paddingHorizontal: spacing.md,
+      paddingBottom: spacing.sm,
+    },
+    vaultName: {
       ...typography.h4,
       color: colors.text,
-      flex: 1,
     },
     addButton: {
       padding: spacing.xs,

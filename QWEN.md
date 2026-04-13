@@ -44,7 +44,9 @@ password-manager/
 ├── types/                    # TypeScript types (vault.ts, identity.ts)
 ├── services/                 # External services
 ├── crypto-native/           # Native crypto module (iOS Swift / Android Kotlin)
-├── supabase/                 # Database schema (schema.sql)
+├── supabase/                 # Database migrations & config
+│   ├── config.toml          # Supabase CLI configuration
+│   └── migrations/          # Ordered migration files
 ├── components/               # Reusable UI components
 ├── constants/                # App constants
 └── utils/                    # Utility functions
@@ -138,8 +140,10 @@ cd android && ./gradlew clean && cd ..
 
 ### Database
 - Supabase PostgreSQL with Row Level Security (RLS) on all tables
-- Tables: `users`, `vaults`, `vault_entries`, `shared_entries`
+- Tables: `users`, `vaults`, `vault_entries`, `shared_entries`, `audit_log`
 - Last-write-wins conflict resolution for sync
+- Salt column access restricted to `get_my_salt()` security definer function
+- Migrations live in `supabase/migrations/` — create with `supabase migration new <name>`
 
 ## Important Security Notes
 
