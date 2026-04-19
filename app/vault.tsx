@@ -12,7 +12,8 @@ import { FlatList } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getEntriesForVault, decryptVaultKey } from '../core/vault/vaultService';
 import { getLastSync, fullSync } from '../core/sync/syncService';
-import { useAppStore } from '../store/useAppStore';
+import { appStore$, appActions } from '../store/appStore';
+import { useValue } from '@legendapp/state/react';
 import type { VaultEntry } from '../types/vault';
 import { useTheme } from '../hooks/useTheme';
 import { useIsDesktop } from '../hooks/useBreakpoint';
@@ -88,7 +89,13 @@ export default function VaultScreen() {
   const [entries, setEntries] = useState<VaultEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
-  const { masterKey, userId, vaults, isSyncing, lastSyncedAt, setSyncing, setLastSyncedAt, setVaults } = useAppStore();
+  
+  const masterKey = useValue(appStore$.masterKey);
+  const userId = useValue(appStore$.userId);
+  const vaults = useValue(appStore$.vaults);
+  const isSyncing = useValue(appStore$.isSyncing);
+  const lastSyncedAt = useValue(appStore$.lastSyncedAt);
+
   const colors = useTheme();
   const insets = useSafeAreaInsets();
   const isDesktop = useIsDesktop();
@@ -96,18 +103,19 @@ export default function VaultScreen() {
   // Load last sync time on mount
   useEffect(() => {
     getLastSync().then(ts => {
-      setLastSyncedAt(ts > 0 ? ts : null);
+      appActions.setLastSyncedAt(ts > 0 ? ts : null);
     });
   }, []);
 
   const loadEntries = useCallback(async () => {
-    if (!params.vaultId || !masterKey) return;
+    const currentMasterKey = appStore$.masterKey.peek();
+    if (!params.vaultId || !currentMasterKey) return;
     const vault = vaults.find(v => v.id === params.vaultId);
     if (!vault) return;
 
     let vaultKey;
     try {
-      vaultKey = await decryptVaultKey(vault.encryptedEncryptionKey, masterKey);
+      vaultKey = await decryptVaultKey(vault.encryptedEncryptionKey, currentMasterKey);
     } catch {
       Alert.alert('Error', 'Failed to decrypt vault key');
       return;
@@ -168,19 +176,19 @@ export default function VaultScreen() {
     }
 
     // Prevent duplicate syncs
-    if (isSyncing) {
+    if (appStore$.isSyncing.peek()) {
       console.log('[VaultSync] Already syncing, skipping');
       return;
     }
 
     console.log('[VaultSync] Setting syncing to true');
-    setSyncing(true);
+    appActions.setSyncing(true);
     try {
       console.log('[VaultSync] Calling fullSync with userId:', userId);
 
       const result = await fullSync(userId, currentMasterKey);
       console.log('[VaultSync] fullSync completed, syncedVaults:', result.syncedVaults, 'syncedEntries:', result.syncedEntries);
-      setVaults(result.mergedVaults);
+      appActions.setVaults(result.mergedVaults);
 
       // Reload entries for current vault
       const vault = result.mergedVaults.find(v => v.id === currentVaultId);
@@ -195,16 +203,16 @@ export default function VaultScreen() {
       }
 
       const newLastSync = Date.now();
-      setLastSyncedAt(newLastSync);
+      appActions.setLastSyncedAt(newLastSync);
       console.log('[VaultSync] Sync completed successfully');
     } catch (error: any) {
       console.error('[VaultSync] Error during sync:', error);
       Alert.alert('Sync Failed', error.message || 'An error occurred during sync.');
     } finally {
       console.log('[VaultSync] Setting syncing to false');
-      setSyncing(false);
+      appActions.setSyncing(false);
     }
-  }, [userId, isSyncing, setSyncing, setLastSyncedAt, setVaults]);
+  }, [userId]);
 
   const styles = useMemo(
     () => createStyles(colors, insets),

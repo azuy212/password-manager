@@ -16,7 +16,7 @@ A **zero-knowledge password manager** built with **Expo SDK 54**, **React Native
 ### Tech Stack
 - **Framework**: Expo SDK 54 + React Native 0.81
 - **Routing**: Expo Router (file-based)
-- **State Management**: Zustand
+- **State Management**: Legend-State
 - **Database**: Supabase (PostgreSQL with RLS)
 - **Storage**: SecureStore (master key & identity), AsyncStorage (vault data)
 - **Crypto**: Native module (`crypto-native`) for AES-GCM, PBKDF2, Ed25519
@@ -40,7 +40,7 @@ password-manager/
 │   ├── sync/                # Cloud sync
 │   ├── sharing/             # Password sharing
 │   └── security/            # Security features
-├── store/                    # Zustand stores (useAppStore.ts)
+├── store/                    # Legend-State stores (appStore.ts)
 ├── types/                    # TypeScript types (vault.ts, identity.ts)
 ├── services/                 # External services
 ├── crypto-native/           # Native crypto module (iOS Swift / Android Kotlin)
@@ -117,8 +117,8 @@ cd android && ./gradlew clean && cd ..
 ## Architecture & Patterns
 
 ### State Management
-- **Zustand** is used for global state management (`store/useAppStore.ts`)
-- Single store pattern with explicit actions
+- **Legend-State** is used for global state management (`store/appStore.ts`)
+- Fine-grained reactivity using observables and `useValue` hook
 - Master keys are destroyed on state reset via `key.destroy()`
 
 ### Encryption Flow
@@ -164,6 +164,6 @@ Defined in `.env.local` (see `.env.example`):
 - TypeScript for all code
 - File-based routing via Expo Router (`app/` directory)
 - Business logic in `core/` organized by domain
-- Zustand for global state (single store pattern)
+- Legend-State for global state
 - Native modules require `npx expo prebuild`
 - Strict TypeScript configuration

@@ -5,7 +5,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/hooks/useTheme';
 import { spacing, radius, typography } from '@/utils/themedStyles';
 import { WebLayout } from '@/components/WebLayout';
-import { useAppStore } from '@/store/useAppStore';
+import { appStore$ } from '@/store/appStore';
+import { useValue } from '@legendapp/state/react';
 import { getSharedWithMe, type SharedEntryWithVaultEntry } from '@/core/sharing/sharingService';
 import { decryptString } from '@/core/crypto';
 import { supabase } from '@/services/supabaseClient';
@@ -25,7 +26,10 @@ interface SharedEntryDisplay {
 export default function SharedScreen() {
   const colors = useTheme();
   const insets = useSafeAreaInsets();
-  const { userId, masterKey } = useAppStore();
+  
+  const userId = useValue(appStore$.userId);
+  const masterKey = useValue(appStore$.masterKey);
+
   const [sharedEntries, setSharedEntries] = useState<SharedEntryWithVaultEntry[]>([]);
   const [displayEntries, setDisplayEntries] = useState<SharedEntryDisplay[]>([]);
   const [isLoading, setIsLoading] = useState(true);

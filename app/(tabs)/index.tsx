@@ -1,7 +1,8 @@
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useAppStore } from '@/store/useAppStore';
+import { appStore$, appActions } from '@/store/appStore';
+import { useValue } from '@legendapp/state/react';
 import { getVaults, createVault, deleteVault } from '@/core/vault/vaultService';
 import type { Vault } from '@/types/vault';
 import React, { useCallback, useMemo, useState } from 'react';
@@ -97,7 +98,9 @@ export default function VaultsScreen() {
   const [isLoadingVaults, setIsLoadingVaults] = useState(false);
   const [isCreatingVault, setIsCreatingVault] = useState(false);
   const router = useRouter();
-  const { setVaults: setStoreVaults, masterKey } = useAppStore();
+  
+  const masterKey = useValue(appStore$.masterKey);
+
   const colors = useTheme();
   const insets = useSafeAreaInsets();
 
@@ -110,14 +113,14 @@ export default function VaultsScreen() {
     try {
       const data = await getVaults();
       setVaults(data);
-      setStoreVaults(data);
+      appActions.setVaults(data);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Failed to load vaults';
       Alert.alert('Error', message);
     } finally {
       setIsLoadingVaults(false);
     }
-  }, [setStoreVaults]);
+  }, []);
 
   useFocusEffect(
     useCallback(() => {

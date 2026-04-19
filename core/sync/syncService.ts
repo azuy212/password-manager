@@ -195,7 +195,7 @@ export async function updateLastSync(): Promise<void> {
  * 4. Update sync timestamp
  *
  * Uses a mutex to prevent concurrent syncs from corrupting data.
- * Returns the merged vaults and entries count so the caller can update the Zustand store.
+ * Returns the merged vaults and entries count so the caller can update the appStore.
  */
 export async function fullSync(
   userId: string,

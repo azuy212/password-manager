@@ -16,7 +16,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useUnlock } from '../core/auth/useUnlock';
 import { getIdentity, clearIdentity, getStoredSupabaseUserId } from '../core/auth/identityService';
-import { useAppStore } from '../store/useAppStore';
+import { appActions, appStore$ } from '../store/appStore';
+import { useValue } from '@legendapp/state/react';
 import { useTheme } from '../hooks/useTheme';
 import { useIsDesktop } from '../hooks/useBreakpoint';
 import { spacing, radius, typography } from '../utils/themedStyles';
@@ -29,11 +30,13 @@ export default function UnlockScreen() {
   const { unlock } = useUnlock();
   const [hasIdentity, setHasIdentity] = useState<boolean | null>(null);
   const router = useRouter();
-  const { setLoading, setError, setAuthenticated, setIdentity, setMasterKey, setUserId } = useAppStore();
   const colors = useTheme();
   const insets = useSafeAreaInsets();
   const isDesktop = useIsDesktop();
   const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  // Use fine-grained loading state
+  const isLoading = useValue(appStore$.isLoading);
 
   useEffect(() => {
     console.log('[Unlock] Component mounted, checking identity...');
@@ -75,7 +78,7 @@ export default function UnlockScreen() {
 
     console.log('[Unlock] Submitting unlock for email:', email.trim());
     setIsSubmitting(true);
-    setLoading(true);
+    appActions.setLoading(true);
     try {
       console.log('[Unlock] Calling unlock()...');
       const result = await unlock(email, password);
@@ -89,22 +92,22 @@ export default function UnlockScreen() {
       console.log('[Unlock] Setting store values, identity:', !!masterKey, 'userId:', supabaseUserId);
       const identity = await getIdentity();
       if (identity) {
-        setIdentity(identity);
+        appActions.setIdentity(identity);
       }
-      setUserId(supabaseUserId);
-      setMasterKey(masterKey);
+      appActions.setUserId(supabaseUserId);
+      appActions.setMasterKey(masterKey);
       console.log('[Unlock] Navigating to tabs...');
-      setAuthenticated(true);
+      appActions.setAuthenticated(true);
       router.replace('/(tabs)');
     } catch (err: any) {
       console.error('[Unlock] Unexpected exception during unlock:', err);
       Alert.alert('Error', 'Unable to unlock vault');
     } finally {
       console.log('[Unlock] Clearing loading state');
-      setLoading(false);
+      appActions.setLoading(false);
       setIsSubmitting(false);
     }
-  }, [email, password, isSubmitting, unlock, setLoading, setIdentity, setUserId, setMasterKey, setAuthenticated, router]);
+  }, [email, password, isSubmitting, unlock, router]);
 
   const styles = useMemo(
     () => createStyles(colors, insets),

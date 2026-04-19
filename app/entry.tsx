@@ -17,15 +17,19 @@ import { ScrollView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { ThemeColors } from '../constants/Colors';
 import { createEntry, deleteEntry, getEntry, updateEntry, decryptVaultKey } from '../core/vault/vaultService';
+import { appStore$ } from '../store/appStore';
+import { useValue } from '@legendapp/state/react';
 import { useTheme } from '../hooks/useTheme';
-import { useAppStore } from '../store/useAppStore';
 import type { VaultEntryInput } from '../types/vault';
 import { radius, spacing, typography } from '../utils/themedStyles';
 
 export default function EntryScreen() {
   const params = useLocalSearchParams<{ vaultId: string; entryId?: string }>();
   const router = useRouter();
-  const { masterKey, vaults } = useAppStore();
+  
+  const masterKey = useValue(appStore$.masterKey);
+  const vaults = useValue(appStore$.vaults);
+
   const colors = useTheme();
   const insets = useSafeAreaInsets();
 

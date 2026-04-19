@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
-import { useAppStore } from '@/store/useAppStore';
+import { appActions } from '@/store/appStore';
 
 const DEFAULT_LOCK_TIMEOUT = 5 * 60 * 1000; // 5 minutes
 
@@ -16,15 +16,14 @@ export function useAutoLock(
   timeoutMs: number = DEFAULT_LOCK_TIMEOUT,
 ) {
   const appStateRef = useRef(AppState.currentState);
-  const { lock: lockApp } = useAppStore();
   const backgroundTime = useRef<number | null>(null);
   const inactivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastActivity = useRef(Date.now());
 
   const handleLock = useCallback(() => {
-    lockApp();
+    appActions.lock();
     onLock?.();
-  }, [lockApp, onLock]);
+  }, [onLock]);
 
   const resetInactivityTimer = useCallback(() => {
     lastActivity.current = Date.now();

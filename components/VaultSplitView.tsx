@@ -20,7 +20,8 @@ import { spacing, radius, typography } from '@/utils/themedStyles';
 import type { VaultEntry } from '@/types/vault';
 import { createEntry, updateEntry, deleteEntry, decryptVaultKey } from '@/core/vault/vaultService';
 import { getLastSync } from '@/core/sync/syncService';
-import { useAppStore } from '@/store/useAppStore';
+import { appStore$, appActions } from '@/store/appStore';
+import { useValue, For } from '@legendapp/state/react';
 import { CopyableField } from '@/components/CopyableField';
 import { SyncStatusIndicator } from '@/components/SyncStatusIndicator';
 
@@ -62,12 +63,16 @@ export function VaultSplitView({
   const colors = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { masterKey, vaults, isSyncing, lastSyncedAt, setSyncing, setLastSyncedAt, setVaults } = useAppStore();
+
+  const masterKey = useValue(appStore$.masterKey);
+  const vaults = useValue(appStore$.vaults);
+  const isSyncing = useValue(appStore$.isSyncing);
+  const lastSyncedAt = useValue(appStore$.lastSyncedAt);
 
   // Load last sync time on mount
   useEffect(() => {
     getLastSync().then(ts => {
-      setLastSyncedAt(ts > 0 ? ts : null);
+      appActions.setLastSyncedAt(ts > 0 ? ts : null);
     });
   }, []);
 
@@ -98,31 +103,31 @@ export function VaultSplitView({
     }
 
     // Prevent duplicate syncs
-    if (useAppStore.getState().isSyncing) {
+    if (appStore$.isSyncing.peek()) {
       return;
     }
 
-    setSyncing(true);
+    appActions.setSyncing(true);
     try {
       const { fullSync } = await import('@/core/sync/syncService');
-      const userId = useAppStore.getState().userId;
+      const userId = appStore$.userId.peek();
       if (!userId) {
         Alert.alert('Error', 'User ID not found');
         return;
       }
 
       const result = await fullSync(userId, currentMasterKey);
-      setVaults(result.mergedVaults);
+      appActions.setVaults(result.mergedVaults);
       onAddEntry();
 
       const newLastSync = Date.now();
-      setLastSyncedAt(newLastSync);
+      appActions.setLastSyncedAt(newLastSync);
     } catch (error: any) {
       Alert.alert('Sync Failed', error.message || 'An error occurred during sync.');
     } finally {
-      setSyncing(false);
+      appActions.setSyncing(false);
     }
-  }, [setSyncing, setLastSyncedAt, setVaults, onAddEntry]);
+  }, [onAddEntry]);
 
   // Load entry data when selected
   const handleSelectEntry = useCallback((entry: VaultEntry) => {

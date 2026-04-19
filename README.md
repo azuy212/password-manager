@@ -16,7 +16,7 @@ A secure, zero-knowledge password manager built with Expo, React Native, and Sup
 
 - **Framework**: Expo SDK 54 + React Native 0.81
 - **Routing**: Expo Router (file-based)
-- **State Management**: Zustand
+- **State Management**: Legend-State
 - **Database**: Supabase (PostgreSQL with Row Level Security)
 - **Storage**: 
   - SecureStore (master key & identity)
@@ -41,7 +41,7 @@ password-manager/
 │   ├── sync/                # Cloud sync
 │   ├── sharing/             # Password sharing
 │   └── security/            # Security features
-├── store/                    # Zustand stores
+├── store/                    # Legend-State stores
 ├── types/                    # TypeScript types
 ├── services/                 # External services
 ├── crypto-native/           # Native crypto module

@@ -14,7 +14,8 @@ import {
   Animated,
 } from 'react-native';
 import { createIdentity } from '../core/auth/identityService';
-import { useAppStore } from '../store/useAppStore';
+import { appActions, appStore$ } from '../store/appStore';
+import { useValue } from '@legendapp/state/react';
 import { useTheme } from '../hooks/useTheme';
 import { useIsDesktop } from '../hooks/useBreakpoint';
 import { spacing, radius, typography } from '../utils/themedStyles';
@@ -26,11 +27,13 @@ export default function SetupScreen() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const router = useRouter();
-  const { setLoading, setAuthenticated, setIdentity, setMasterKey, setUserId } = useAppStore();
   const colors = useTheme();
   const insets = useSafeAreaInsets();
   const isDesktop = useIsDesktop();
   const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  // Use fine-grained loading state
+  const isLoading = useValue(appStore$.isLoading);
 
   React.useEffect(() => {
     Animated.timing(fadeAnim, {
@@ -62,7 +65,7 @@ export default function SetupScreen() {
     }
 
     setIsSubmitting(true);
-    setLoading(true);
+    appActions.setLoading(true);
     try {
       const result = await createIdentity(email, password);
       if ('error' in result) {
@@ -70,19 +73,19 @@ export default function SetupScreen() {
         return;
       }
       const { identity, masterKey, supabaseUserId } = result;
-      setIdentity(identity);
-      setMasterKey(masterKey);
-      setUserId(supabaseUserId);
-      setAuthenticated(true);
+      appActions.setIdentity(identity);
+      appActions.setMasterKey(masterKey);
+      appActions.setUserId(supabaseUserId);
+      appActions.setAuthenticated(true);
       router.replace('/(tabs)');
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Failed to create vault';
       Alert.alert('Error', message);
     } finally {
-      setLoading(false);
+      appActions.setLoading(false);
       setIsSubmitting(false);
     }
-  }, [email, password, confirmPassword, setLoading, setIdentity, setMasterKey, setUserId, setAuthenticated, router]);
+  }, [email, password, confirmPassword, router]);
 
   const styles = useMemo(
     () => createStyles(colors, insets),

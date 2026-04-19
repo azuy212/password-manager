@@ -5,7 +5,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { clearIdentity } from '@/core/auth/identityService';
 import { fullSync, getLastSync } from '@/core/sync/syncService';
-import { useAppStore } from '@/store/useAppStore';
+import { appStore$, appActions } from '@/store/appStore';
+import { useValue } from '@legendapp/state/react';
 import { useTheme } from '@/hooks/useTheme';
 import { spacing, radius, typography } from '@/utils/themedStyles';
 import { LoadingOverlay } from '@/components/LoadingOverlay';
@@ -69,7 +70,12 @@ function SettingItem({ icon, label, onPress, danger, colors }: SettingItemProps)
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { reset, masterKey, userId, isSyncing, lastSyncedAt, setSyncing, setLastSyncedAt, setVaults, setEntries, activeVault } = useAppStore();
+  
+  const masterKey = useValue(appStore$.masterKey);
+  const userId = useValue(appStore$.userId);
+  const isSyncing = useValue(appStore$.isSyncing);
+  const activeVault = useValue(appStore$.activeVault);
+
   const colors = useTheme();
   const insets = useSafeAreaInsets();
   const [isResetting, setIsResetting] = useState(false);
@@ -78,7 +84,7 @@ export default function SettingsScreen() {
   useEffect(() => {
     getLastSync().then(ts => {
       setLastSyncTime(ts > 0 ? ts : null);
-      setLastSyncedAt(ts > 0 ? ts : null);
+      appActions.setLastSyncedAt(ts > 0 ? ts : null);
     });
   }, []);
 
@@ -88,31 +94,31 @@ export default function SettingsScreen() {
       return;
     }
 
-    setSyncing(true);
+    appActions.setSyncing(true);
     try {
       const result = await fullSync(userId, masterKey);
-      // Update the Zustand store with merged vaults
-      setVaults(result.mergedVaults);
+      // Update the store with merged vaults
+      appActions.setVaults(result.mergedVaults);
 
       // If an active vault is set, reload its entries from AsyncStorage
       if (activeVault) {
         const { getEntriesForVault, decryptVaultKey } = await import('@/core/vault/vaultService');
         const vaultKey = await decryptVaultKey(activeVault.encryptedEncryptionKey, masterKey);
         const entries = await getEntriesForVault(activeVault.id, vaultKey);
-        setEntries(entries);
+        appActions.setEntries(entries);
         vaultKey.destroy();
       }
 
       // Update last sync time
       const newLastSync = Date.now();
       setLastSyncTime(newLastSync);
-      setLastSyncedAt(newLastSync);
+      appActions.setLastSyncedAt(newLastSync);
 
       Alert.alert('Sync Complete', `Synced ${result.syncedVaults} vault(s) and ${result.syncedEntries} entr${result.syncedEntries === 1 ? 'y' : 'ies'}.`);
     } catch (error: any) {
       Alert.alert('Sync Failed', error.message || 'An error occurred during sync.');
     } finally {
-      setSyncing(false);
+      appActions.setSyncing(false);
     }
   };
 
@@ -129,7 +135,7 @@ export default function SettingsScreen() {
             setIsResetting(true);
             try {
               await clearIdentity();
-              reset();
+              appActions.reset();
               router.replace('/');
             } catch {
               setIsResetting(false);
