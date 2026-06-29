@@ -1,6 +1,8 @@
 export interface Identity {
   id: string;
   publicKey: number[];
-  encryptedPrivateKey: string; // AES-GCM encrypted, base64 encoded
-  salt: number[]; // Used to derive key for decrypting private key
+  encryptedPrivateKey: string;       // Ed25519 private key, AES-GCM encrypted with master key
+  salt: number[];                    // PBKDF2 salt, used to re-derive the master key
+  x25519PublicKey?: number[];        // X25519 public key for ECDH sharing
+  encryptedX25519PrivateKey?: string; // X25519 private key, AES-GCM encrypted with master key
 }

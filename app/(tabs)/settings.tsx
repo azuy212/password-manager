@@ -1,9 +1,11 @@
-import React, { useMemo, useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Alert, Pressable } from 'react-native';
+import React, { useMemo, useState, useCallback } from 'react';
+import { View, Text, StyleSheet, Alert, Pressable, Modal, TextInput, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { clearIdentity } from '@/core/auth/identityService';
+import { clearIdentity, changePassword } from '@/core/auth/identityService';
+import { getMasterKey } from '@/core/masterKeyStore';
+import { reEncryptVaultKeys } from '@/core/vault/vaultService';
 import { appStore$, appActions, getSyncState } from '@/store/appStore';
 import { useValue } from '@legendapp/state/react';
 import { useTheme } from '@/hooks/useTheme';
@@ -69,9 +71,6 @@ function SettingItem({ icon, label, onPress, danger, colors }: SettingItemProps)
 
 export default function SettingsScreen() {
   const router = useRouter();
-  
-  const masterKey = useValue(appStore$.masterKey);
-  const userId = useValue(appStore$.userId);
 
   // Sync state from Legend-State
   const syncs = getSyncState();
@@ -84,15 +83,20 @@ export default function SettingsScreen() {
 
   const colors = useTheme();
   const insets = useSafeAreaInsets();
-  const [isResetting, setIsResetting] = useState(false);
 
-  const handleSync = async () => {
-    // Legend-State handles sync automatically, but we can trigger a refresh if needed
+  const [isResetting, setIsResetting] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+
+  const handleSync = useCallback(async () => {
     syncs.vaults.refresh();
     syncs.entries.refresh();
-  };
+  }, [syncs]);
 
-  const handleReset = () => {
+  const handleReset = useCallback(() => {
     Alert.alert(
       'Reset Vault',
       'This will permanently delete all your data. This cannot be undone.',
@@ -114,9 +118,63 @@ export default function SettingsScreen() {
         },
       ]
     );
-  };
+  }, [router]);
 
-  const styles = React.useMemo(() => StyleSheet.create({
+  const handleChangePassword = useCallback(async () => {
+    const currentKey = getMasterKey();
+    if (!currentKey) {
+      Alert.alert('Error', 'Not authenticated');
+      return;
+    }
+
+    if (!oldPassword || !newPassword) {
+      Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+
+    if (newPassword.length < 8) {
+      Alert.alert('Error', 'New password must be at least 8 characters');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      Alert.alert('Error', 'Passwords do not match');
+      return;
+    }
+
+    setIsChangingPassword(true);
+    try {
+      const newKey = await changePassword(oldPassword, newPassword, currentKey);
+      if (!newKey) {
+        Alert.alert('Error', 'Failed to change password. Check your old password is correct.');
+        return;
+      }
+
+      await reEncryptVaultKeys(currentKey, newKey);
+      currentKey.destroy();
+      appActions.setMasterKey(newKey);
+
+      setShowChangePassword(false);
+      setOldPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      Alert.alert('Success', 'Master password changed successfully');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to change password';
+      Alert.alert('Error', message);
+    } finally {
+      setIsChangingPassword(false);
+    }
+  }, [oldPassword, newPassword, confirmPassword]);
+
+  const handleOpenChangePassword = useCallback(() => {
+    setOldPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
+    setShowChangePassword(true);
+  }, []);
+
+  const styles = useMemo(() => StyleSheet.create({
     container: {
       flex: 1,
       backgroundColor: 'transparent',
@@ -143,6 +201,73 @@ export default function SettingsScreen() {
       overflow: 'hidden',
       marginBottom: spacing.sm,
     },
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    modalContent: {
+      backgroundColor: colors.surface,
+      borderRadius: radius.lg,
+      padding: spacing.lg,
+      width: '85%',
+      maxWidth: 400,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    modalTitle: {
+      ...typography.h4,
+      color: colors.text,
+      marginBottom: spacing.xs,
+      textAlign: 'center',
+    },
+    modalSubtitle: {
+      ...typography.caption,
+      color: colors.textSecondary,
+      marginBottom: spacing.lg,
+      textAlign: 'center',
+    },
+    input: {
+      backgroundColor: colors.inputBackground,
+      borderWidth: 1,
+      borderColor: colors.inputBorder,
+      padding: spacing.md,
+      borderRadius: radius.md,
+      color: colors.text,
+      marginBottom: spacing.md,
+      ...typography.body,
+    },
+    modalButtons: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      gap: spacing.md,
+      marginTop: spacing.sm,
+    },
+    modalButton: {
+      flex: 1,
+      padding: spacing.md,
+      borderRadius: radius.md,
+      alignItems: 'center',
+    },
+    modalButtonCancel: {
+      backgroundColor: colors.backgroundSecondary,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    modalButtonSave: {
+      backgroundColor: colors.primary,
+    },
+    modalButtonTextCancel: {
+      color: colors.textSecondary,
+      fontWeight: '600',
+      fontSize: 16,
+    },
+    modalButtonTextSave: {
+      color: colors.textInverse,
+      fontWeight: '600',
+      fontSize: 16,
+    },
   }), [colors, insets]);
 
   return (
@@ -165,15 +290,9 @@ export default function SettingsScreen() {
         <Text style={styles.sectionHeader}>Security</Text>
         <View style={styles.section}>
           <SettingItem
-            icon="time"
-            label="Auto-Lock Timer"
-            onPress={() => {}}
-            colors={colors}
-          />
-          <SettingItem
-            icon="shield-checkmark"
-            label="Security Settings"
-            onPress={() => {}}
+            icon="lock-closed"
+            label="Change Master Password"
+            onPress={handleOpenChangePassword}
             colors={colors}
           />
         </View>
@@ -190,6 +309,70 @@ export default function SettingsScreen() {
           />
         </View>
       </ScrollView>
+
+      {/* Change Password Modal */}
+      <Modal visible={showChangePassword} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Change Master Password</Text>
+            <Text style={styles.modalSubtitle}>
+              All vault keys will be re-encrypted with your new password
+            </Text>
+
+            <TextInput
+              style={styles.input}
+              placeholder="Current password"
+              placeholderTextColor={colors.placeholder}
+              secureTextEntry
+              value={oldPassword}
+              onChangeText={setOldPassword}
+              autoFocus
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="New password (min 8 chars)"
+              placeholderTextColor={colors.placeholder}
+              secureTextEntry
+              value={newPassword}
+              onChangeText={setNewPassword}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Confirm new password"
+              placeholderTextColor={colors.placeholder}
+              secureTextEntry
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              returnKeyType="done"
+              onSubmitEditing={handleChangePassword}
+            />
+
+            <View style={styles.modalButtons}>
+              <Pressable
+                style={styles.modalButtonCancel}
+                onPress={() => setShowChangePassword(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel"
+              >
+                <Text style={styles.modalButtonTextCancel}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={styles.modalButtonSave}
+                onPress={handleChangePassword}
+                disabled={isChangingPassword}
+                accessibilityRole="button"
+                accessibilityLabel="Change password"
+              >
+                {isChangingPassword ? (
+                  <ActivityIndicator size="small" color={colors.textInverse} />
+                ) : (
+                  <Text style={styles.modalButtonTextSave}>Change</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
       </View>
     </WebLayout>
   );

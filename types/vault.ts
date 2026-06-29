@@ -18,7 +18,6 @@ export interface VaultEntry {
   deletedAt?: number;
   createdAt: number;
   updatedAt: number;
-  lastAccessed?: number;
 }
 
 export interface Vault {

@@ -19,6 +19,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { spacing, radius, typography } from '@/utils/themedStyles';
 import type { VaultEntry } from '@/types/vault';
 import { createEntry, updateEntry, deleteEntry, decryptVaultKey } from '@/core/vault/vaultService';
+import { getMasterKey } from '@/core/masterKeyStore';
 import { appStore$, getSyncState } from '@/store/appStore';
 import { useValue, For } from '@legendapp/state/react';
 import { CopyableField } from '@/components/CopyableField';
@@ -63,7 +64,6 @@ export function VaultSplitView({
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
-  const masterKey = useValue(appStore$.masterKey);
   const vaults = useValue(appStore$.vaults);
 
   // Sync state from Legend-State
@@ -115,7 +115,8 @@ export function VaultSplitView({
       Alert.alert('Error', 'Title and username are required');
       return;
     }
-    if (!masterKey) {
+    const key = getMasterKey();
+    if (!key) {
       Alert.alert('Error', 'Master key not available');
       return;
     }
@@ -129,7 +130,7 @@ export function VaultSplitView({
 
     setIsSaving(true);
     try {
-      const vaultKey = await decryptVaultKey(vault.encryptedEncryptionKey, masterKey);
+      const vaultKey = await decryptVaultKey(vault.encryptedEncryptionKey, key);
       try {
         const input = {
           vaultId,
@@ -159,7 +160,7 @@ export function VaultSplitView({
     } finally {
       setIsSaving(false);
     }
-  }, [formData, masterKey, isSaving, selectedEntry, vaultId, onAddEntry]);
+  }, [formData, isSaving, selectedEntry, vaultId, onAddEntry]);
 
   const handleDelete = useCallback(() => {
     if (!selectedEntry || isDeleting) return;

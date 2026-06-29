@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { appStore$ } from '@/store/appStore';
 import { useValue } from '@legendapp/state/react';
+import { getMasterKey } from '@/core/masterKeyStore';
 import { createVault, deleteVault } from '@/core/vault/vaultService';
 import type { Vault } from '@/types/vault';
 import React, { useCallback, useMemo, useState } from 'react';
@@ -97,7 +98,6 @@ export default function VaultsScreen() {
   const [isCreatingVault, setIsCreatingVault] = useState(false);
   const router = useRouter();
   
-  const masterKey = useValue(appStore$.masterKey);
   const vaults = useValue(appStore$.vaults);
 
   const colors = useTheme();
@@ -143,7 +143,8 @@ export default function VaultsScreen() {
   }, [modalScale, modalOpacity]);
 
   const handleSaveVault = useCallback(async () => {
-    if (!newVaultName.trim() || !masterKey) {
+    const key = getMasterKey();
+    if (!newVaultName.trim() || !key) {
       closeModal();
       return;
     }
@@ -155,7 +156,7 @@ export default function VaultsScreen() {
         {
           name: newVaultName.trim(),
         },
-        masterKey
+        key
       );
       closeModal();
     } catch {
@@ -164,7 +165,7 @@ export default function VaultsScreen() {
     } finally {
       setIsCreatingVault(false);
     }
-  }, [newVaultName, masterKey, isCreatingVault, closeModal]);
+  }, [newVaultName, isCreatingVault, closeModal]);
 
   const handleDeleteVault = useCallback((vault: Vault) => {
     Alert.alert(

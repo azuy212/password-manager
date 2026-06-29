@@ -1,7 +1,7 @@
 import { appStore$ } from '../../store/appStore';
 import { uuidv4 } from '@/utils/uuid';
 import type { Vault, VaultEntry, VaultEntryInput, VaultInput } from '../../types/vault';
-import { encryptString, decryptString, SecureKey, generateRandomBytes } from '../crypto';
+import { encryptString, decryptString, encryptBytes, decryptBytes, SecureKey, generateRandomBytes } from '../crypto';
 
 /** Raw encrypted entry as stored in store */
 export interface VaultEntryRaw {
@@ -21,9 +21,7 @@ export async function decryptVaultKey(
   encryptedEncryptionKey: string,
   masterKey: SecureKey
 ): Promise<SecureKey> {
-  const dekString = await decryptString(encryptedEncryptionKey, masterKey);
-  // Convert decrypted string back to number[] for SecureKey
-  const dekBytes = Array.from(dekString).map(c => c.charCodeAt(0));
+  const dekBytes = await decryptBytes(encryptedEncryptionKey, masterKey);
   return new SecureKey(dekBytes);
 }
 
@@ -77,10 +75,7 @@ export async function getVaults(): Promise<Vault[]> {
 export async function createVault(input: VaultInput, masterKey: SecureKey): Promise<Vault> {
   // Generate a unique data encryption key for this vault, then encrypt it with the master key
   const vaultKeyBytes = await generateRandomBytes(32);
-  const encryptedEncryptionKey = await encryptString(
-    String.fromCharCode(...vaultKeyBytes),
-    masterKey
-  );
+  const encryptedEncryptionKey = await encryptBytes(vaultKeyBytes, masterKey);
 
   const newVault: Vault = {
     id: uuidv4(),
@@ -244,6 +239,26 @@ export async function deleteEntry(entryId: string): Promise<void> {
     deletedAt: Date.now(),
     updatedAt: Date.now(),
   });
+}
+
+/**
+ * Re-encrypt all vault DEKs with a new master key.
+ * Used during password rotation.
+ */
+export async function reEncryptVaultKeys(
+  oldMasterKey: SecureKey,
+  newMasterKey: SecureKey,
+): Promise<void> {
+  const vaults = appStore$.vaults.get();
+  for (const vault of vaults) {
+    const vaultKey = await decryptVaultKey(vault.encryptedEncryptionKey, oldMasterKey);
+    const newEncryptedKey = await encryptBytes(vaultKey.toArray(), newMasterKey);
+    vaultKey.destroy();
+    const idx = appStore$.vaults.get().findIndex(v => v.id === vault.id);
+    if (idx !== -1) {
+      appStore$.vaults[idx].encryptedEncryptionKey.set(newEncryptedKey);
+    }
+  }
 }
 
 /**

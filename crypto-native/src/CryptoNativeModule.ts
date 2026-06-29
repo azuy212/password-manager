@@ -1,6 +1,6 @@
 import { NativeModule, requireNativeModule } from 'expo';
 
-import { CryptoNativeModuleEvents, EncryptionResult, KeyBytes, KeyPair, Salt, DataBytes } from './CryptoNative.types';
+import { CryptoNativeModuleEvents, EncryptionResult, KeyBytes, KeyPair, Salt, DataBytes, X25519KeyPair } from './CryptoNative.types';
 
 declare class CryptoNativeModule extends NativeModule<CryptoNativeModuleEvents> {
   generateSalt(length: number): Promise<Salt>;
@@ -10,6 +10,8 @@ declare class CryptoNativeModule extends NativeModule<CryptoNativeModuleEvents> 
   generateKeyPair(): Promise<KeyPair>;
   sign(data: DataBytes, privateKey: KeyBytes): Promise<DataBytes>;
   verify(data: DataBytes, signature: DataBytes, publicKey: KeyBytes): Promise<boolean>;
+  generateX25519KeyPair(): Promise<X25519KeyPair>;
+  ecdh(privateKey: DataBytes, publicKey: DataBytes): Promise<DataBytes>;
   hmacSha256(data: DataBytes, key: KeyBytes): Promise<DataBytes>;
   generateRandomBytes(length: number): Promise<DataBytes>;
 }

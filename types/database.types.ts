@@ -126,6 +126,7 @@ export type Database = {
           id: string
           public_key: string
           salt: string
+          x25519_public_key: string | null
           updated_at: string | null
         }
         Insert: {
@@ -134,6 +135,7 @@ export type Database = {
           id?: string
           public_key: string
           salt: string
+          x25519_public_key?: string | null
           updated_at?: string | null
         }
         Update: {
@@ -142,6 +144,7 @@ export type Database = {
           id?: string
           public_key?: string
           salt?: string
+          x25519_public_key?: string | null
           updated_at?: string | null
         }
         Relationships: []

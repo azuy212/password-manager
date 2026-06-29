@@ -3,7 +3,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { uuidv4 } from '@/utils/uuid';
 
 import CryptoNative from 'crypto-native';
-import { deriveMasterKey, encryptString, decryptString, SecureKey } from '@/core/crypto';
+import { deriveMasterKey, encryptBytes, decryptBytes, SecureKey } from '@/core/crypto';
+import { generateX25519KeyPair } from '@/core/crypto/x25519';
 import type { Identity } from '@/types/identity';
 import { supabaseSignUp, supabaseSignIn, supabaseSignOut } from './supabaseAuthService';
 import { supabase } from '../../services/supabaseClient';
@@ -18,7 +19,7 @@ const VAULTS_KEY = 'vaults';
 const ENTRIES_KEY = 'vault_entries';
 
 /**
- * Create a new identity with keypair and register with Supabase Auth.
+ * Create a new identity with Ed25519 + X25519 keypairs and register with Supabase Auth.
  * Returns the identity, masterKey, and the Supabase userId.
  */
 export async function createIdentity(
@@ -27,23 +28,29 @@ export async function createIdentity(
 ): Promise<{ identity: Identity; masterKey: SecureKey; supabaseUserId: string } | { error: string }> {
   const id = uuidv4();
 
-  // Generate keypair
+  // Generate Ed25519 keypair
   const { privateKey, publicKey } = await CryptoNative.generateKeyPair();
 
-  // Derive a key from password to encrypt the private key
+  // Generate X25519 keypair for ECDH sharing
+  const { privateKey: x25519PrivateKey, publicKey: x25519PublicKey } =
+    generateX25519KeyPair();
+
+  // Derive a key from password to encrypt the private keys
   const { key: encryptionKey, salt } = await deriveMasterKey(password);
 
-  // Encrypt the private key
-  const encryptedPrivateKey = await encryptString(
-    String.fromCharCode(...privateKey),
-    encryptionKey
-  );
+  // Encrypt the Ed25519 private key
+  const encryptedPrivateKey = await encryptBytes(privateKey, encryptionKey);
+
+  // Encrypt the X25519 private key
+  const encryptedX25519PrivateKey = await encryptBytes(x25519PrivateKey, encryptionKey);
 
   const identity: Identity = {
     id,
     publicKey,
     encryptedPrivateKey,
     salt,
+    x25519PublicKey: Array.from(x25519PublicKey),
+    encryptedX25519PrivateKey,
   };
 
   // Store identity locally
@@ -51,7 +58,7 @@ export async function createIdentity(
   await secureStorage.deleteItem(ATTEMPT_COUNT_KEY); // Reset attempts
 
   // Sign up with Supabase Auth and create the users row
-  const authResult = await supabaseSignUp(email, password, publicKey, salt);
+  const authResult = await supabaseSignUp(email, password, publicKey, salt, Array.from(x25519PublicKey));
   if (!authResult.success) {
     // Rollback: clear local identity since Supabase signup failed
     await secureStorage.deleteItem(IDENTITY_KEY);
@@ -74,20 +81,24 @@ export async function bootstrapIdentityFromCloud(
   // Generate a NEW Ed25519 keypair for this device
   const { privateKey } = await CryptoNative.generateKeyPair();
 
+  // Generate a NEW X25519 keypair for ECDH sharing
+  const { privateKey: x25519PrivateKey, publicKey: x25519PublicKey } =
+    generateX25519KeyPair();
+
   // Derive master key from cloud salt
   const { key: encryptionKey } = await deriveMasterKey(password, salt);
 
-  // Encrypt this device's private key
-  const encryptedPrivateKey = await encryptString(
-    String.fromCharCode(...privateKey),
-    encryptionKey
-  );
+  // Encrypt this device's private keys
+  const encryptedPrivateKey = await encryptBytes(privateKey, encryptionKey);
+  const encryptedX25519PrivateKey = await encryptBytes(x25519PrivateKey, encryptionKey);
 
   const identity: Identity = {
     id: supabaseUserId,
     publicKey,
     encryptedPrivateKey,
     salt,
+    x25519PublicKey: Array.from(x25519PublicKey),
+    encryptedX25519PrivateKey,
   };
 
   // Store locally so future unlocks work
@@ -134,8 +145,8 @@ export async function unlockIdentity(password: string): Promise<SecureKey | null
     console.log('[identityService] Master key derived, attempting to decrypt private key...');
 
     // Try to decrypt private key to verify password
-    const decrypted = await decryptString(identity.encryptedPrivateKey, key);
-    console.log('[identityService] Decryption result valid:', !!decrypted);
+    const decrypted = await decryptBytes(identity.encryptedPrivateKey, key);
+    console.log('[identityService] Decryption result valid:', decrypted !== null);
 
     if (decrypted) {
       // Success — reset attempt count
@@ -152,7 +163,7 @@ export async function unlockIdentity(password: string): Promise<SecureKey | null
     const message = err?.message || '';
     console.error('[identityService] Decryption error:', message);
     // Data corruption/tampering errors should be surfaced to the user
-    if (message.includes('Missing HMAC') || message.includes('corrupted') || message.includes('tampered')) {
+    if (message.includes('corrupted') || message.includes('tampered')) {
       return { error: 'Vault data is corrupted. This can happen after an app update or data migration. You may need to reset your vault.' };
     }
     // Unknown errors — surface to user
@@ -178,7 +189,7 @@ export async function getStoredSupabaseUserId(): Promise<string | null> {
 }
 
 /**
- * Get decrypted private key
+ * Get decrypted Ed25519 private key
  */
 export async function getDecryptedPrivateKey(password: string): Promise<number[] | null> {
   const identity = await getIdentity();
@@ -188,13 +199,28 @@ export async function getDecryptedPrivateKey(password: string): Promise<number[]
   if (!result || 'error' in result) return null;
   const masterKey = result;
 
-  // Decrypt the private key
   try {
-    const decrypted = await decryptString(identity.encryptedPrivateKey, masterKey);
-    masterKey.destroy(); // Clean up key after use
-    return Array.from(decrypted).map(c => c.charCodeAt(0));
+    return await decryptBytes(identity.encryptedPrivateKey, masterKey);
   } catch {
+    return null;
+  } finally {
     masterKey.destroy();
+  }
+}
+
+/**
+ * Get decrypted X25519 private key (for ECDH key exchange).
+ * Requires the master key to be available in the singleton.
+ */
+export async function getDecryptedX25519PrivateKey(
+  masterKey: SecureKey,
+): Promise<number[] | null> {
+  const identity = await getIdentity();
+  if (!identity?.encryptedX25519PrivateKey) return null;
+
+  try {
+    return await decryptBytes(identity.encryptedX25519PrivateKey, masterKey);
+  } catch {
     return null;
   }
 }
@@ -273,15 +299,22 @@ export async function changePassword(
   // Now derive new key and re-encrypt locally
   const { key: newKey, salt: newSalt } = await deriveMasterKey(newPassword);
 
-  // Re-encrypt the private key with the new password
-  const privateKey = await decryptString(identity.encryptedPrivateKey, oldKey);
-  const encryptedPrivateKey = await encryptString(privateKey, newKey);
+  // Re-encrypt the private keys with the new password
+  const privateKey = await decryptBytes(identity.encryptedPrivateKey, oldKey);
+  const encryptedPrivateKey = await encryptBytes(privateKey, newKey);
+
+  let encryptedX25519PrivateKey = identity.encryptedX25519PrivateKey;
+  if (identity.encryptedX25519PrivateKey) {
+    const x25519PrivateKey = await decryptBytes(identity.encryptedX25519PrivateKey, oldKey);
+    encryptedX25519PrivateKey = await encryptBytes(x25519PrivateKey, newKey);
+  }
 
   // Update identity
   const updatedIdentity: Identity = {
     ...identity,
     salt: newSalt,
     encryptedPrivateKey,
+    encryptedX25519PrivateKey,
   };
 
   await secureStorage.setItem(IDENTITY_KEY, JSON.stringify(updatedIdentity));

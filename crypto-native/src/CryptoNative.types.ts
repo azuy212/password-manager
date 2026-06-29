@@ -19,6 +19,11 @@ export type OnLoadEventPayload = {
   url: string;
 };
 
+export type X25519KeyPair = {
+  privateKey: number[];
+  publicKey: number[];
+};
+
 export type CryptoNativeViewProps = {
   url?: string;
   onLoad?: (event: { nativeEvent: OnLoadEventPayload }) => void;

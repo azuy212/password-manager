@@ -7,6 +7,8 @@ import { spacing, radius, typography } from '@/utils/themedStyles';
 import { WebLayout } from '@/components/WebLayout';
 import { appStore$ } from '@/store/appStore';
 import { useValue } from '@legendapp/state/react';
+import { getMasterKey } from '@/core/masterKeyStore';
+import { unwrapSharedEntryKey } from '@/core/sharing/sharingService';
 import { decryptString } from '@/core/crypto';
 import { supabase } from '@/services/supabaseClient';
 
@@ -26,20 +28,19 @@ export default function SharedScreen() {
   const insets = useSafeAreaInsets();
   
   const userId = useValue(appStore$.userId);
-  const masterKey = useValue(appStore$.masterKey);
   const sharedEntries = useValue(appStore$.sharedEntries);
 
   const [displayEntries, setDisplayEntries] = useState<SharedEntryDisplay[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const loadSharedEntries = useCallback(async () => {
+    const key = getMasterKey();
     if (!userId || !sharedEntries) return;
     setIsLoading(true);
     try {
-      // Fetch the actual encrypted_payload from vault_entries
-      // The merged RLS policy allows this because the user is in shared_entries
-      if (masterKey && sharedEntries.length > 0) {
-        const entryIds = sharedEntries.map(e => e.entry_id);
+      if (sharedEntries.length > 0) {
+        // Fetch the actual encrypted_payload from vault_entries
+        const entryIds = sharedEntries.map(e => e.entryId);
         const { data: vaultData, error: vaultError } = await supabase
           .from('vault_entries')
           .select('id, encrypted_payload')
@@ -56,38 +57,57 @@ export default function SharedScreen() {
           }
         }
 
-        // Decrypt metadata for display
+        // Batch-fetch owner X25519 public keys (deduplicate owner IDs)
+        const ownerIds = [...new Set(sharedEntries.map(e => e.ownerId))];
+        const x25519KeyMap = new Map<string, number[]>();
+        if (key) {
+          for (const ownerId of ownerIds) {
+            const { data } = await supabase
+              .from('users')
+              .select('x25519_public_key')
+              .eq('id', ownerId)
+              .single();
+            if (data?.x25519_public_key) {
+              x25519KeyMap.set(ownerId, JSON.parse(data.x25519_public_key));
+            }
+          }
+        }
+
+        // Decrypt using ECDH unwrapping
         const decrypted: SharedEntryDisplay[] = [];
         for (const entry of sharedEntries) {
-          const encryptedPayload = vaultMap.get(entry.entry_id);
-          let title = 'Shared Entry';
+          const encryptedPayload = vaultMap.get(entry.entryId);
+          let title = 'Shared Entry (encrypted)';
           let username = '';
 
-          if (encryptedPayload && masterKey) {
+          const ownerX25519Pub = x25519KeyMap.get(entry.ownerId);
+          if (encryptedPayload && ownerX25519Pub && key) {
             try {
-              const contentJson = await decryptString(encryptedPayload, masterKey);
-              const content = JSON.parse(contentJson);
-              title = content.title || 'Shared Entry';
-              username = content.username || '';
+              const vaultDEK = await unwrapSharedEntryKey(entry.encryptedKey, ownerX25519Pub);
+              if (vaultDEK) {
+                const contentJson = await decryptString(encryptedPayload, vaultDEK);
+                vaultDEK.destroy();
+                const content = JSON.parse(contentJson);
+                title = content.title || 'Shared Entry';
+                username = content.username || '';
+              }
             } catch {
-              // Shared entries are encrypted with the owner's vault key, not the recipient's master key
-              // The recipient would need the vault's DEK (shared via encrypted_key) to decrypt
               title = 'Shared Entry (encrypted)';
             }
           }
 
           decrypted.push({
             id: entry.id,
-            entry_id: entry.entry_id,
-            owner_id: entry.owner_id,
-            encrypted_key: entry.encrypted_key,
+            entry_id: entry.entryId,
+            owner_id: entry.ownerId,
+            encrypted_key: entry.encryptedKey,
             encrypted_payload: encryptedPayload,
             title,
             username,
           });
         }
         setDisplayEntries(decrypted);
-      } else if (sharedEntries.length === 0) {
+      } else {
         setDisplayEntries([]);
       }
     } catch (error: any) {
@@ -95,7 +115,7 @@ export default function SharedScreen() {
     } finally {
       setIsLoading(false);
     }
-  }, [userId, masterKey, sharedEntries]);
+  }, [userId, sharedEntries]);
 
   useEffect(() => {
     loadSharedEntries();

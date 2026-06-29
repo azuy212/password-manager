@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   StyleSheet,
@@ -17,6 +18,8 @@ import { ScrollView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { ThemeColors } from '../constants/Colors';
 import { createEntry, deleteEntry, getEntry, updateEntry, decryptVaultKey } from '../core/vault/vaultService';
+import { getMasterKey } from '../core/masterKeyStore';
+import { shareEntryWithECDH } from '../core/sharing/sharingService';
 import { appStore$ } from '../store/appStore';
 import { useValue } from '@legendapp/state/react';
 import { useTheme } from '../hooks/useTheme';
@@ -27,7 +30,6 @@ export default function EntryScreen() {
   const params = useLocalSearchParams<{ vaultId: string; entryId?: string }>();
   const router = useRouter();
   
-  const masterKey = useValue(appStore$.masterKey);
   const vaults = useValue(appStore$.vaults);
 
   const colors = useTheme();
@@ -43,6 +45,9 @@ export default function EntryScreen() {
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [shareEmail, setShareEmail] = useState('');
+  const [isSharing, setIsSharing] = useState(false);
 
   const handleCopyField = useCallback(async (value: string, field: string) => {
     if (!value) return;
@@ -58,13 +63,14 @@ export default function EntryScreen() {
   }, [params.entryId]);
 
   const loadEntry = useCallback(async () => {
-    if (!params.entryId || !masterKey) return;
+    const key = getMasterKey();
+    if (!params.entryId || !key) return;
     setIsLoadingEntry(true);
     try {
       const vault = (vaults || []).find(v => v.id === params.vaultId);
       if (!vault) { setIsLoadingEntry(false); return; }
 
-      const vaultKey = await decryptVaultKey(vault.encryptedEncryptionKey, masterKey);
+      const vaultKey = await decryptVaultKey(vault.encryptedEncryptionKey, key);
       try {
         const entry = await getEntry(params.entryId as string, vaultKey);
         if (entry) {
@@ -82,7 +88,7 @@ export default function EntryScreen() {
     } finally {
       setIsLoadingEntry(false);
     }
-  }, [params.entryId, params.vaultId, masterKey, vaults]);
+  }, [params.entryId, params.vaultId, vaults]);
 
   const handleSave = useCallback(async () => {
     if (!title.trim() || !username.trim()) {
@@ -90,7 +96,8 @@ export default function EntryScreen() {
       return;
     }
 
-    if (!masterKey) {
+    const key = getMasterKey();
+    if (!key) {
       Alert.alert('Error', 'Master key not available');
       return;
     }
@@ -105,7 +112,7 @@ export default function EntryScreen() {
         return;
       }
 
-      const vaultKey = await decryptVaultKey(vault.encryptedEncryptionKey, masterKey);
+      const vaultKey = await decryptVaultKey(vault.encryptedEncryptionKey, key);
       try {
         const input: VaultEntryInput = {
           vaultId: params.vaultId as string,
@@ -132,7 +139,7 @@ export default function EntryScreen() {
     } finally {
       setIsSaving(false);
     }
-  }, [title, username, masterKey, isSaving, params.vaultId, params.entryId, url, notes, password, router]);
+  }, [title, username, isSaving, params.vaultId, params.entryId, url, notes, password, router]);
 
   const handleDelete = useCallback(async () => {
     if (!params.entryId || isDeleting) return;
@@ -161,6 +168,47 @@ export default function EntryScreen() {
     );
   }, [params.entryId, isDeleting, router]);
 
+  const handleShare = useCallback(async () => {
+    if (!params.entryId || !shareEmail.trim()) return;
+
+    const key = getMasterKey();
+    if (!key) {
+      Alert.alert('Error', 'Not authenticated');
+      return;
+    }
+
+    setIsSharing(true);
+    try {
+      const vault = (vaults || []).find(v => v.id === params.vaultId);
+      if (!vault) throw new Error('Vault not found');
+
+      const vaultKey = await decryptVaultKey(vault.encryptedEncryptionKey, key);
+      try {
+        const result = await shareEntryWithECDH(
+          params.entryId,
+          vault.userId,
+          shareEmail.trim(),
+          vaultKey,
+        );
+
+        if (result.success) {
+          setShowShareModal(false);
+          setShareEmail('');
+          Alert.alert('Shared', 'Entry shared successfully');
+        } else {
+          Alert.alert('Error', result.error || 'Failed to share entry');
+        }
+      } finally {
+        vaultKey.destroy();
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to share entry';
+      Alert.alert('Error', message);
+    } finally {
+      setIsSharing(false);
+    }
+  }, [params.entryId, params.vaultId, shareEmail, vaults]);
+
   const styles = useMemo(
     () => createStyles(colors, insets),
     [colors, insets],
@@ -179,19 +227,31 @@ export default function EntryScreen() {
         <Text style={styles.headerTitle}>
           {params.entryId ? 'Edit Entry' : 'New Entry'}
         </Text>
-        <Pressable
-          onPress={handleSave}
-          style={styles.headerButton}
-          disabled={isSaving}
-          accessibilityRole="button"
-          accessibilityLabel="Save entry"
-        >
-          {isSaving ? (
-            <ActivityIndicator size="small" color={colors.primary} />
-          ) : (
-            <Text style={styles.saveButton}>Save</Text>
+        <View style={styles.headerActions}>
+          {params.entryId && (
+            <Pressable
+              onPress={() => { setShowShareModal(true); setShareEmail(''); }}
+              style={styles.headerButton}
+              accessibilityRole="button"
+              accessibilityLabel="Share entry"
+            >
+              <Ionicons name="share-outline" size={24} color={colors.primary} />
+            </Pressable>
           )}
-        </Pressable>
+          <Pressable
+            onPress={handleSave}
+            style={styles.headerButton}
+            disabled={isSaving}
+            accessibilityRole="button"
+            accessibilityLabel="Save entry"
+          >
+            {isSaving ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <Text style={styles.saveButton}>Save</Text>
+            )}
+          </Pressable>
+        </View>
       </View>
 
       <ScrollView style={styles.content} contentContainerStyle={styles.scrollContent}>
@@ -391,6 +451,53 @@ export default function EntryScreen() {
           </Pressable>
         )}
       </ScrollView>
+
+      {/* Share Modal */}
+      <Modal visible={showShareModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Share Entry</Text>
+            <Text style={styles.modalSubtitle}>
+              Enter the email of the user to share this entry with
+            </Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Recipient email"
+              placeholderTextColor={colors.placeholder}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              value={shareEmail}
+              onChangeText={setShareEmail}
+              autoFocus
+              returnKeyType="done"
+              onSubmitEditing={handleShare}
+            />
+            <View style={styles.modalButtons}>
+              <Pressable
+                style={styles.modalButtonCancel}
+                onPress={() => setShowShareModal(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel"
+              >
+                <Text style={styles.modalButtonTextCancel}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={styles.modalButtonShare}
+                onPress={handleShare}
+                disabled={isSharing || !shareEmail.trim()}
+                accessibilityRole="button"
+                accessibilityLabel="Share entry"
+              >
+                {isSharing ? (
+                  <ActivityIndicator size="small" color={colors.textInverse} />
+                ) : (
+                  <Text style={styles.modalButtonTextShare}>Share</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -418,6 +525,11 @@ const createStyles = (colors: ThemeColors, insets: ReturnType<typeof useSafeArea
       minHeight: 44,
       justifyContent: 'center',
       alignItems: 'center',
+    },
+    headerActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
     },
     headerTitle: {
       ...typography.h4,
@@ -548,5 +660,73 @@ const createStyles = (colors: ThemeColors, insets: ReturnType<typeof useSafeArea
       fontSize: 16,
       fontWeight: '600',
       marginLeft: spacing.sm,
+    },
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    modalContent: {
+      backgroundColor: colors.surface,
+      borderRadius: radius.lg,
+      padding: spacing.lg,
+      width: '85%',
+      maxWidth: 400,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    modalTitle: {
+      ...typography.h4,
+      color: colors.text,
+      marginBottom: spacing.xs,
+      textAlign: 'center',
+    },
+    modalSubtitle: {
+      ...typography.caption,
+      color: colors.textSecondary,
+      marginBottom: spacing.lg,
+      textAlign: 'center',
+    },
+    modalInput: {
+      backgroundColor: colors.inputBackground,
+      borderWidth: 1,
+      borderColor: colors.inputBorder,
+      padding: spacing.md,
+      borderRadius: radius.md,
+      color: colors.text,
+      marginBottom: spacing.md,
+      ...typography.body,
+    },
+    modalButtons: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      gap: spacing.md,
+    },
+    modalButtonCancel: {
+      flex: 1,
+      padding: spacing.md,
+      borderRadius: radius.md,
+      alignItems: 'center',
+      backgroundColor: colors.backgroundSecondary,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    modalButtonShare: {
+      flex: 1,
+      padding: spacing.md,
+      borderRadius: radius.md,
+      alignItems: 'center',
+      backgroundColor: colors.primary,
+    },
+    modalButtonTextCancel: {
+      color: colors.textSecondary,
+      fontWeight: '600',
+      fontSize: 16,
+    },
+    modalButtonTextShare: {
+      color: colors.textInverse,
+      fontWeight: '600',
+      fontSize: 16,
     },
   });

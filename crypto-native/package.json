@@ -9,7 +9,7 @@
     "clean": "expo-module clean",
     "lint": "expo-module lint",
     "test": "expo-module test",
-    "prepare": "expo-module prepare",
+    "prepare": "",
     "prepublishOnly": "expo-module prepublishOnly",
     "expo-module": "expo-module",
     "open:ios": "xed example/ios",
@@ -28,11 +28,13 @@
   "author": "Ali Zain Ul Yasoob <ali.yasoob@discorp.com> ()",
   "license": "MIT",
   "homepage": "#readme",
-  "dependencies": {},
+  "dependencies": {
+    "@noble/curves": "^2.2.0"
+  },
   "devDependencies": {
     "@types/react": "~19.1.1",
-    "expo-module-scripts": "^55.0.2",
     "expo": "^55.0.14",
+    "expo-module-scripts": "^55.0.2",
     "react-native": "0.82.1"
   },
   "peerDependencies": {

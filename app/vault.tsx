@@ -11,6 +11,7 @@ import {
 import { FlatList } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getEntriesForVault, decryptVaultKey } from '../core/vault/vaultService';
+import { getMasterKey } from '../core/masterKeyStore';
 import { appStore$, getSyncState } from '../store/appStore';
 import { useValue } from '@legendapp/state/react';
 import type { VaultEntry } from '../types/vault';
@@ -89,7 +90,6 @@ export default function VaultScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
   
-  const masterKey = useValue(appStore$.masterKey);
   const userId = useValue(appStore$.userId);
   const vaults = useValue(appStore$.vaults);
 
@@ -107,7 +107,7 @@ export default function VaultScreen() {
   const isDesktop = useIsDesktop();
 
   const loadEntries = useCallback(async () => {
-    const currentMasterKey = appStore$.masterKey.peek();
+    const currentMasterKey = getMasterKey();
     if (!params.vaultId || !currentMasterKey || !vaults) return;
     const vault = vaults.find(v => v.id === params.vaultId);
     if (!vault) return;
@@ -130,7 +130,7 @@ export default function VaultScreen() {
       setIsLoading(false);
       vaultKey.destroy();
     }
-  }, [params.vaultId, masterKey, vaults]);
+  }, [params.vaultId, vaults]);
 
   useFocusEffect(
     useCallback(() => {

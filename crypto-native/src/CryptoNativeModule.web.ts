@@ -1,7 +1,11 @@
 /**
  * Web Crypto API fallback for the crypto-native module.
- * Provides equivalent functionality using the Web Crypto API.
+ * Uses @noble/curves for Ed25519 and X25519 (not natively supported by Web Crypto),
+ * and the Web Crypto API for PBKDF2, AES-GCM, and HMAC.
  */
+
+import { ed25519, x25519 } from '@noble/curves/ed25519.js';
+import type { X25519KeyPair } from './CryptoNative.types';
 
 /**
  * PBKDF2-SHA256 key derivation
@@ -10,7 +14,7 @@ async function deriveKey(
   password: string,
   salt: number[],
   iterations: number,
-  keyLength: number
+  keyLength: number,
 ): Promise<number[]> {
   const encoder = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey(
@@ -18,7 +22,7 @@ async function deriveKey(
     encoder.encode(password),
     'PBKDF2',
     false,
-    ['deriveBits']
+    ['deriveBits'],
   );
 
   const derivedBits = await crypto.subtle.deriveBits(
@@ -29,7 +33,7 @@ async function deriveKey(
       hash: 'SHA-256',
     },
     keyMaterial,
-    keyLength * 8 // bits
+    keyLength * 8,
   );
 
   return Array.from(new Uint8Array(derivedBits));
@@ -40,25 +44,24 @@ async function deriveKey(
  */
 async function encrypt(
   data: number[],
-  keyBytes: number[]
+  keyBytes: number[],
 ): Promise<{ ciphertext: number[]; nonce: number[]; tag: number[] }> {
   const key = await crypto.subtle.importKey(
     'raw',
     new Uint8Array(keyBytes),
     { name: 'AES-GCM', length: 256 },
     false,
-    ['encrypt']
+    ['encrypt'],
   );
 
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const encrypted = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv },
     key,
-    new Uint8Array(data)
+    new Uint8Array(data),
   );
 
   const encryptedBytes = new Uint8Array(encrypted);
-  // AES-GCM appends 16-byte auth tag at the end
   const ciphertext = Array.from(encryptedBytes.slice(0, -16));
   const tag = Array.from(encryptedBytes.slice(-16));
 
@@ -76,97 +79,90 @@ async function decrypt(
   ciphertext: number[],
   keyBytes: number[],
   nonce: number[],
-  tag: number[]
+  tag: number[],
 ): Promise<number[]> {
   const key = await crypto.subtle.importKey(
     'raw',
     new Uint8Array(keyBytes),
     { name: 'AES-GCM', length: 256 },
     false,
-    ['decrypt']
+    ['decrypt'],
   );
 
-  // Reassemble: ciphertext + tag
   const fullCiphertext = new Uint8Array([...ciphertext, ...tag]);
 
   const decrypted = await crypto.subtle.decrypt(
     { name: 'AES-GCM', iv: new Uint8Array(nonce) },
     key,
-    fullCiphertext
+    fullCiphertext,
   );
 
   return Array.from(new Uint8Array(decrypted));
 }
 
 /**
- * Generate Ed25519 keypair using Web Crypto API (WebCrypto doesn't support Ed25519, use EC P-256)
+ * Generate Ed25519 keypair (raw 32-byte public key, 64-byte secret key).
+ * Uses @noble/curves — matches native module output format exactly.
  */
 async function generateKeyPair(): Promise<{ privateKey: number[]; publicKey: number[] }> {
-  const keyPair = await crypto.subtle.generateKey(
-    {
-      name: 'ECDSA',
-      namedCurve: 'P-256',
-    },
-    true, // extractable so we can export
-    ['sign', 'verify']
-  );
-
-  const privateKeyBytes = await crypto.subtle.exportKey('pkcs8', keyPair.privateKey);
-  const publicKeyBytes = await crypto.subtle.exportKey('spki', keyPair.publicKey);
-
+  const privateKey = ed25519.utils.randomSecretKey();
+  const publicKey = ed25519.getPublicKey(privateKey);
   return {
-    privateKey: Array.from(new Uint8Array(privateKeyBytes)),
-    publicKey: Array.from(new Uint8Array(publicKeyBytes)),
+    privateKey: Array.from(privateKey),
+    publicKey: Array.from(publicKey),
   };
 }
 
 /**
- * Sign data with ECDSA
+ * Sign data with Ed25519.
  */
 async function sign(data: number[], privateKeyBytes: number[]): Promise<number[]> {
-  const privateKey = await crypto.subtle.importKey(
-    'pkcs8',
-    new Uint8Array(privateKeyBytes),
-    { name: 'ECDSA', namedCurve: 'P-256' },
-    false,
-    ['sign']
-  );
-
-  const signature = await crypto.subtle.sign(
-    { name: 'ECDSA', hash: 'SHA-256' },
-    privateKey,
-    new Uint8Array(data)
-  );
-
-  return Array.from(new Uint8Array(signature));
+  const signature = ed25519.sign(new Uint8Array(data), new Uint8Array(privateKeyBytes));
+  return Array.from(signature);
 }
 
 /**
- * Verify ECDSA signature
+ * Verify Ed25519 signature.
  */
 async function verify(
   data: number[],
   signatureBytes: number[],
-  publicKeyBytes: number[]
+  publicKeyBytes: number[],
 ): Promise<boolean> {
   try {
-    const publicKey = await crypto.subtle.importKey(
-      'spki',
-      new Uint8Array(publicKeyBytes),
-      { name: 'ECDSA', namedCurve: 'P-256' },
-      false,
-      ['verify']
-    );
-
-    return await crypto.subtle.verify(
-      { name: 'ECDSA', hash: 'SHA-256' },
-      publicKey,
+    return ed25519.verify(
       new Uint8Array(signatureBytes),
-      new Uint8Array(data)
+      new Uint8Array(data),
+      new Uint8Array(publicKeyBytes),
     );
   } catch {
     return false;
   }
+}
+
+/**
+ * Generate X25519 keypair for ECDH key exchange.
+ * Used for password sharing: encrypting vault DEKs for recipient's public key.
+ */
+async function generateX25519KeyPair(): Promise<X25519KeyPair> {
+  const privateKey = x25519.utils.randomSecretKey();
+  const publicKey = x25519.getPublicKey(privateKey);
+  return {
+    privateKey: Array.from(privateKey),
+    publicKey: Array.from(publicKey),
+  };
+}
+
+/**
+ * Perform X25519 ECDH key agreement.
+ * Returns the shared secret (32 bytes) that both parties can derive.
+ */
+async function ecdh(privateKey: number[], publicKey: number[]): Promise<number[]> {
+  const sharedSecret = x25519.getSharedSecret(
+    new Uint8Array(privateKey),
+    new Uint8Array(publicKey),
+  );
+  return Array.from(sharedSecret);
 }
 
 /**
@@ -178,7 +174,7 @@ async function hmacSha256(data: number[], keyBytes: number[]): Promise<number[]>
     new Uint8Array(keyBytes),
     { name: 'HMAC', hash: 'SHA-256' },
     false,
-    ['sign']
+    ['sign'],
   );
 
   const mac = await crypto.subtle.sign('HMAC', key, new Uint8Array(data));
@@ -197,6 +193,8 @@ export default {
   generateKeyPair,
   sign,
   verify,
+  generateX25519KeyPair,
+  ecdh,
   hmacSha256,
 
   generateRandomBytes: async (length: number): Promise<number[]> => {

@@ -3,8 +3,8 @@ import { observablePersistAsyncStorage } from '@legendapp/state/persist-plugins/
 import { configureSynced, syncObservable } from '@legendapp/state/sync';
 import { configureSyncedSupabase, syncedSupabase } from '@legendapp/state/sync-plugins/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { SecureKey } from '../core/crypto';
 import { supabase } from '../services/supabaseClient';
+import { destroyMasterKey as destroyKeySingleton, setMasterKey as setKeySingleton } from '../core/masterKeyStore';
 import type { Database } from '../types/database.types';
 import type { Identity } from '../types/identity';
 
@@ -85,7 +85,6 @@ interface AppState {
   // Auth
   isAuthenticated: boolean;
   identity: Identity | null;
-  masterKey: SecureKey | null;
   userId: string | null;
 
   // Data (populated by syncObservable below)
@@ -110,7 +109,6 @@ interface AppState {
 export const appStore$ = observable<AppState>({
   isAuthenticated: false,
   identity: null,
-  masterKey: null,
   userId: null,
 
   vaults: [],
@@ -184,7 +182,6 @@ syncObservable(
         user_id:                  appStore$.userId.peek() ?? '',
         name:                     vault.name,
         encrypted_encryption_key: vault.encryptedEncryptionKey,
-        version:                  vault.version,
         deleted_at:               iso(vault.deletedAt),
         updated_at:               new Date().toISOString(),
       }),
@@ -235,7 +232,6 @@ syncObservable(
         id:               entry.id,
         vault_id:         entry.vaultId,
         encrypted_payload: entry.encryptedPayload,
-        version:          entry.version,
         deleted_at:       iso(entry.deletedAt),
         updated_at:       new Date().toISOString(),
       }),
@@ -301,19 +297,12 @@ export const getSyncState = () => ({
 // ---------------------------------------------------------------------------
 // Actions
 // ---------------------------------------------------------------------------
-function destroyMasterKey(key: SecureKey | null) {
-  key?.destroy();
-}
-
 export const appActions = {
   // Auth
   setAuthenticated: (auth: boolean) => appStore$.isAuthenticated.set(auth),
   setIdentity:      (identity: Identity | null) => appStore$.identity.set(identity),
   setUserId:        (id: string | null) => appStore$.userId.set(id),
-  setMasterKey: (key: SecureKey | null) => {
-    destroyMasterKey(appStore$.masterKey.get());
-    appStore$.masterKey.set(key);
-  },
+  setMasterKey:     setKeySingleton,
 
   // UI selection
   setActiveVault: (vaultId: string | null) => {
@@ -354,7 +343,7 @@ export const appActions = {
 
   // Session teardown — lock keeps identity, reset wipes everything
   lock: () => {
-    destroyMasterKey(appStore$.masterKey.get());
+    destroyKeySingleton();
     const identity = appStore$.identity.get();
 
     // Clear persisted data — do NOT set([]) / set({}) on synced observables,
@@ -365,7 +354,6 @@ export const appActions = {
 
     appStore$.assign({
       isAuthenticated: false,
-      masterKey:       null,
       activeVaultId:   null,
       activeEntryId:   null,
       isLoading:       false,
@@ -378,7 +366,7 @@ export const appActions = {
   },
 
   reset: () => {
-    destroyMasterKey(appStore$.masterKey.get());
+    destroyKeySingleton();
 
     syncState(appStore$.vaults).clearPersist();
     syncState(appStore$.entries).clearPersist();
@@ -386,7 +374,6 @@ export const appActions = {
 
     appStore$.assign({
       isAuthenticated: false,
-      masterKey:       null,
       identity:        null,
       activeVaultId:   null,
       activeEntryId:   null,

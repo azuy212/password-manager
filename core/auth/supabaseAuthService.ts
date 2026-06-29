@@ -9,13 +9,14 @@ export interface SupabaseAuthResult {
 /**
  * Sign up with Supabase Auth using email/password.
  * This creates a Supabase Auth user AND a corresponding row in the `users` table
- * with the public key and salt from the local identity.
+ * with the public key, salt, and x25519 public key from the local identity.
  */
 export async function supabaseSignUp(
   email: string,
   password: string,
   publicKey: number[],
-  salt: number[]
+  salt: number[],
+  x25519PublicKey?: number[],
 ): Promise<SupabaseAuthResult> {
   try {
     const { data, error } = await supabase.auth.signUp({
@@ -40,6 +41,7 @@ export async function supabaseSignUp(
         email,
         public_key: JSON.stringify(publicKey),
         salt: JSON.stringify(salt),
+        x25519_public_key: x25519PublicKey ? JSON.stringify(x25519PublicKey) : null,
       });
 
     if (profileError) {
@@ -118,6 +120,36 @@ export async function fetchUserCryptoParams(
     salt: JSON.parse(saltData as string),
     publicKey: JSON.parse(profileData.public_key),
   };
+}
+
+/**
+ * Fetch a user's X25519 public key (for ECDH sharing).
+ */
+export async function fetchX25519PublicKey(
+  userId: string,
+): Promise<number[] | null> {
+  const { data, error } = await supabase
+    .from('users')
+    .select('x25519_public_key')
+    .eq('id', userId)
+    .single();
+
+  if (error || !data?.x25519_public_key) return null;
+  return JSON.parse(data.x25519_public_key);
+}
+
+/**
+ * Get a user ID by email (for sharing).
+ */
+export async function getUserIdByEmail(email: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('users')
+    .select('id')
+    .eq('email', email)
+    .single();
+
+  if (error || !data) return null;
+  return data.id;
 }
 
 /**

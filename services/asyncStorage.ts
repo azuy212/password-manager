@@ -1,7 +1,7 @@
 /**
  * Platform-aware AsyncStorage export.
- * - On web: uses the localStorage-based shim
+ * - On web: uses AES-GCM encrypted localStorage
  * - On native: uses @react-native-async-storage/async-storage
  */
-import AsyncStorage from './asyncStorage.web';
+import AsyncStorage from './secureAsyncStorage.web';
 export default AsyncStorage;

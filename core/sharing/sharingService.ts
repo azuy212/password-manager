@@ -1,6 +1,9 @@
 import { supabase } from '../../services/supabaseClient';
-
-import type { Database } from '../../services/supabaseClient';
+import { encryptBytes, decryptBytes, SecureKey } from '../crypto';
+import { fetchX25519PublicKey, getUserIdByEmail } from '../auth/supabaseAuthService';
+import { getDecryptedX25519PrivateKey } from '../auth/identityService';
+import { getMasterKey } from '../masterKeyStore';
+import { ecdh } from '../crypto/x25519';
 
 export interface ShareResult {
   success: boolean;
@@ -13,8 +16,8 @@ export interface SharedEntryWithVaultEntry {
   owner_id: string;
   shared_with_id: string;
   encrypted_key: string;
-  created_at: string;
-  updated_at: string;
+  created_at: string | null;
+  updated_at: string | null;
   deleted_at: string | null;
 }
 
@@ -48,32 +51,43 @@ export async function getUserPublicKeyByEmail(email: string): Promise<number[] |
 }
 
 /**
- * Share a vault entry with another user
+ * Share a vault entry with another user using ECDH-based key wrapping.
  *
  * Flow:
- * 1. Fetch recipient's public key
- * 2. Encrypt the entry's key with recipient's public key
- * 3. Upload to shared_entries table (key wrapper only)
- *    The actual encrypted_payload stays in vault_entries — recipient
- *    accesses it via the shared_entries RLS join path.
+ * 1. Get recipient's user ID and X25519 public key
+ * 2. Decrypt sender's X25519 private key
+ * 3. ECDH → shared secret
+ * 4. Encrypt the vault DEK with the shared secret
+ * 5. Upload to shared_entries table
  */
-export async function shareEntry(
+export async function shareEntryWithECDH(
   entryId: string,
   ownerId: string,
   recipientEmail: string,
-  encryptedKey: string
+  vaultDEK: SecureKey,
 ): Promise<ShareResult> {
   try {
-    // Get recipient's user ID
-    const { data: recipientData, error: recipientError } = await supabase
-      .from('users')
-      .select('id')
-      .eq('email', recipientEmail)
-      .single();
+    const masterKey = getMasterKey();
+    if (!masterKey) return { success: false, error: 'Not authenticated' };
 
-    if (recipientError || !recipientData) {
-      return { success: false, error: 'User not found' };
-    }
+    const recipientId = await getUserIdByEmail(recipientEmail);
+    if (!recipientId) return { success: false, error: 'User not found' };
+
+    if (recipientId === ownerId) return { success: false, error: 'Cannot share with yourself' };
+
+    const recipientX25519Pub = await fetchX25519PublicKey(recipientId);
+    if (!recipientX25519Pub) return { success: false, error: 'Recipient has no X25519 key' };
+
+    const senderX25519Priv = await getDecryptedX25519PrivateKey(masterKey);
+    if (!senderX25519Priv) return { success: false, error: 'Your X25519 key not found' };
+
+    // ECDH: derive shared secret
+    const sharedSecret = ecdh(senderX25519Priv, recipientX25519Pub);
+    const sharedKey = new SecureKey(sharedSecret);
+
+    // Encrypt vault DEK with shared secret
+    const encryptedKey = await encryptBytes(vaultDEK.toArray(), sharedKey);
+    sharedKey.destroy();
 
     // Create share record
     const { error } = await supabase
@@ -81,12 +95,12 @@ export async function shareEntry(
       .insert({
         entry_id: entryId,
         owner_id: ownerId,
-        shared_with_id: recipientData.id,
+        shared_with_id: recipientId,
         encrypted_key: encryptedKey,
       });
 
     if (error) {
-      if (error.code === '23505') { // unique_violation
+      if (error.code === '23505') {
         return { success: false, error: 'Already shared with this user' };
       }
       return { success: false, error: error.message };
@@ -95,6 +109,69 @@ export async function shareEntry(
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Legacy share entry — creates a share record with a pre-encrypted key.
+ * Prefer shareEntryWithECDH for new flows.
+ */
+export async function shareEntry(
+  entryId: string,
+  ownerId: string,
+  recipientEmail: string,
+  encryptedKey: string
+): Promise<ShareResult> {
+  try {
+    const recipientId = await getUserIdByEmail(recipientEmail);
+    if (!recipientId) return { success: false, error: 'User not found' };
+
+    const { error } = await supabase
+      .from('shared_entries')
+      .insert({
+        entry_id: entryId,
+        owner_id: ownerId,
+        shared_with_id: recipientId,
+        encrypted_key: encryptedKey,
+      });
+
+    if (error) {
+      if (error.code === '23505') {
+        return { success: false, error: 'Already shared with this user' };
+      }
+      return { success: false, error: error.message };
+    }
+
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Decrypt a shared entry's vault DEK using ECDH.
+ * Returns the vault DEK so it can be used to decrypt the entry content.
+ */
+export async function unwrapSharedEntryKey(
+  encryptedKey: string,
+  ownerX25519PublicKey: number[],
+): Promise<SecureKey | null> {
+  const masterKey = getMasterKey();
+  if (!masterKey) return null;
+
+  const recipientX25519Priv = await getDecryptedX25519PrivateKey(masterKey);
+  if (!recipientX25519Priv) return null;
+
+  try {
+    const sharedSecret = ecdh(recipientX25519Priv, ownerX25519PublicKey);
+    const sharedKey = new SecureKey(sharedSecret);
+
+    const dekBytes = await decryptBytes(encryptedKey, sharedKey);
+    sharedKey.destroy();
+
+    return new SecureKey(dekBytes);
+  } catch {
+    return null;
   }
 }
 
