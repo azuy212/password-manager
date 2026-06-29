@@ -7,12 +7,6 @@
     "icon": "./assets/images/icon.png",
     "scheme": "passwordmanager",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
-    "splash": {
-      "image": "./assets/images/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.ali.yasoob.passwordmanager"
@@ -22,7 +16,6 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.ali.yasoob.passwordmanager"
     },
@@ -37,7 +30,8 @@
       "./crypto-native/plugin.js"
     ],
     "experiments": {
-      "typedRoutes": true
+      "typedRoutes": true,
+      "reactCompiler": true
     }
   }
 }
