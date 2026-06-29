@@ -1,3 +1,4 @@
+import VaultEntryItem from '@/components/VaultEntryItem';
 import { Ionicons } from '@expo/vector-icons';
 import { useValue } from '@legendapp/state/react';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -22,78 +23,18 @@ import { useIsDesktop } from '../hooks/useBreakpoint';
 import { useTheme } from '../hooks/useTheme';
 import { appActions, appStore$, getSyncState } from '../store/appStore';
 import type { VaultEntry } from '../types/vault';
-import { radius, spacing, typography } from '../utils/themedStyles';
-
-// ─── Static base styles for VaultEntryItem ───
-
-const vaultEntryItemBase = StyleSheet.create({
-  entryItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 8,
-    borderWidth: 1,
-  },
-  entryIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  entryInfo: {
-    flex: 1,
-    marginLeft: 16,
-  },
-  entryTitle: {
-    ...typography.bodyMedium,
-  },
-  entryUsername: {
-    ...typography.small,
-    marginTop: 2,
-  },
-});
-
-interface VaultEntryItemProps {
-  item: VaultEntry;
-  onPress: (entry: VaultEntry) => void;
-  colors: ThemeColors;
-}
-
-const VaultEntryItem = React.memo(function VaultEntryItem({ item, onPress, colors }: VaultEntryItemProps) {
-  return (
-    <Pressable
-      style={({ pressed }) => [
-        vaultEntryItemBase.entryItem,
-        { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
-      ]}
-      onPress={() => onPress(item)}
-      accessibilityRole="button"
-      accessibilityLabel={`View entry for ${item.title}`}
-    >
-      <View style={[vaultEntryItemBase.entryIcon, { backgroundColor: colors.primaryMuted }]}>
-        <Ionicons name="key" size={20} color={colors.primary} />
-      </View>
-      <View style={vaultEntryItemBase.entryInfo}>
-        <Text style={[vaultEntryItemBase.entryTitle, { color: colors.text }]} numberOfLines={1}>{item.title}</Text>
-        <Text style={[vaultEntryItemBase.entryUsername, { color: colors.textSecondary }]} numberOfLines={1}>{item.username}</Text>
-      </View>
-      <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-    </Pressable>
-  );
-});
+import { spacing, typography } from '../utils/themedStyles';
 
 export default function VaultScreen() {
   const params = useLocalSearchParams<{ vaultId: string; vaultName: string }>();
   const [entries, setEntries] = useState<VaultEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const router = useRouter();
-  
-  const userId = useValue(appStore$.userId);
-  const vaults = useValue(appStore$.vaults);
+
 
   // Sync state from Legend-State
+  const vaults = useValue(appStore$.vaults);
   const syncs = getSyncState();
   const vaultsSync = useValue(syncs.vaults);
   const entriesSync = useValue(syncs.entries);
@@ -155,13 +96,23 @@ export default function VaultScreen() {
     });
   }, [router, params.vaultId]);
 
-  const handleSync = useCallback(async () => {
-    await Promise.all([
-      syncs.vaults.sync(),
-      syncs.entries.sync()
-    ]);
-    await loadEntries();
-  }, [loadEntries]);
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+
+    try {
+      await Promise.all([
+        syncs.vaults.sync(),
+        syncs.entries.sync(),
+      ]);
+
+      await loadEntries();
+    } catch (error) {
+      console.error(error);
+      Alert.alert("Sync Failed", "Unable to sync your vault.");
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadEntries, syncs]);
 
   const styles = useMemo(
     () => createStyles(colors, insets),
@@ -175,7 +126,7 @@ export default function VaultScreen() {
     [handleEditEntry, colors],
   );
 
-  const vaultName = (params.vaultName as string) ?? '';
+  const vaultName = params.vaultName ?? '';
 
   return (
     <WebLayout>
@@ -197,18 +148,20 @@ export default function VaultScreen() {
                 isSyncing={isSyncing}
                 lastSyncedAt={lastSyncedAt > 0 ? lastSyncedAt : null}
                 syncError={syncError}
-                onSync={handleSync}
+                onSync={handleRefresh}
               />
             </View>
             <Text style={styles.entryCount}>
-              {(entries || []).length} {(entries || []).length === 1 ? 'entry' : 'entries'}
+              {(entries).length} {(entries).length === 1 ? 'entry' : 'entries'}
             </Text>
           </View>
 
           <FlatList
-            data={entries || []}
+            data={entries}
             keyExtractor={(item) => item.id}
             renderItem={renderItem}
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
             contentContainerStyle={styles.list}
             removeClippedSubviews
             maxToRenderPerBatch={10}
@@ -274,37 +227,6 @@ const createStyles = (colors: ThemeColors, insets: ReturnType<typeof useSafeArea
     },
     list: {
       padding: spacing.md,
-    },
-    entryItem: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      padding: spacing.md,
-      backgroundColor: colors.surface,
-      borderRadius: radius.md,
-      marginBottom: spacing.sm,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    entryIcon: {
-      width: 40,
-      height: 40,
-      borderRadius: radius.sm,
-      backgroundColor: colors.primaryMuted,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    entryInfo: {
-      flex: 1,
-      marginLeft: spacing.md,
-    },
-    entryTitle: {
-      ...typography.bodyMedium,
-      color: colors.text,
-    },
-    entryUsername: {
-      ...typography.small,
-      color: colors.textSecondary,
-      marginTop: 2,
     },
     empty: {
       alignItems: 'center',

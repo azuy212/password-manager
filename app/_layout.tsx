@@ -1,12 +1,12 @@
-import 'react-native-get-random-values';
-import { ThemeProvider, DefaultTheme } from '@react-navigation/native';
-import { Stack, useRouter, usePathname } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { useColorScheme } from 'react-native';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import Colors from '@/constants/Colors';
 import { useAutoLock } from '@/core/security/useAutoLock';
+import { DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { Stack, usePathname, useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import { useColorScheme } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import 'react-native-get-random-values';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 export { ErrorBoundary } from 'expo-router';
 
