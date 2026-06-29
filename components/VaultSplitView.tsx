@@ -19,8 +19,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { spacing, radius, typography } from '@/utils/themedStyles';
 import type { VaultEntry } from '@/types/vault';
 import { createEntry, updateEntry, deleteEntry, decryptVaultKey } from '@/core/vault/vaultService';
-import { getLastSync } from '@/core/sync/syncService';
-import { appStore$, appActions } from '@/store/appStore';
+import { appStore$, getSyncState } from '@/store/appStore';
 import { useValue, For } from '@legendapp/state/react';
 import { CopyableField } from '@/components/CopyableField';
 import { SyncStatusIndicator } from '@/components/SyncStatusIndicator';
@@ -66,15 +65,15 @@ export function VaultSplitView({
 
   const masterKey = useValue(appStore$.masterKey);
   const vaults = useValue(appStore$.vaults);
-  const isSyncing = useValue(appStore$.isSyncing);
-  const lastSyncedAt = useValue(appStore$.lastSyncedAt);
 
-  // Load last sync time on mount
-  useEffect(() => {
-    getLastSync().then(ts => {
-      appActions.setLastSyncedAt(ts > 0 ? ts : null);
-    });
-  }, []);
+  // Sync state from Legend-State
+  const syncs = getSyncState();
+  const vaultsSync = useValue(syncs.vaults);
+  const entriesSync = useValue(syncs.entries);
+
+  const isSyncing = vaultsSync.isSyncing || entriesSync.isSyncing;
+  const lastSyncedAt = Math.max(vaultsSync.lastSyncedAt || 0, entriesSync.lastSyncedAt || 0);
+  const syncError = vaultsSync.error ? 'Vaults sync error' : entriesSync.error ? 'Entries sync error' : null;
 
   const [selectedEntry, setSelectedEntry] = useState<VaultEntry | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -84,50 +83,11 @@ export function VaultSplitView({
   const [isDeleting, setIsDeleting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Use refs to avoid callback recreation issues during async operations
-  const vaultIdRef = useRef(vaultId);
-  const masterKeyRef = useRef(masterKey);
-  
-  useEffect(() => {
-    vaultIdRef.current = vaultId;
-    masterKeyRef.current = masterKey;
-  }, [vaultId, masterKey]);
-
   const handleSync = useCallback(async () => {
-    const currentVaultId = vaultIdRef.current;
-    const currentMasterKey = masterKeyRef.current;
-    
-    if (!currentMasterKey || !currentVaultId) {
-      Alert.alert('Error', 'Vault is not unlocked');
-      return;
-    }
-
-    // Prevent duplicate syncs
-    if (appStore$.isSyncing.peek()) {
-      return;
-    }
-
-    appActions.setSyncing(true);
-    try {
-      const { fullSync } = await import('@/core/sync/syncService');
-      const userId = appStore$.userId.peek();
-      if (!userId) {
-        Alert.alert('Error', 'User ID not found');
-        return;
-      }
-
-      const result = await fullSync(userId, currentMasterKey);
-      appActions.setVaults(result.mergedVaults);
-      onAddEntry();
-
-      const newLastSync = Date.now();
-      appActions.setLastSyncedAt(newLastSync);
-    } catch (error: any) {
-      Alert.alert('Sync Failed', error.message || 'An error occurred during sync.');
-    } finally {
-      appActions.setSyncing(false);
-    }
-  }, [onAddEntry]);
+    // Legend-State handles sync automatically, but we can trigger a refresh if needed
+    syncs.vaults.refresh();
+    syncs.entries.refresh();
+  }, [syncs]);
 
   // Load entry data when selected
   const handleSelectEntry = useCallback((entry: VaultEntry) => {
@@ -161,7 +121,7 @@ export function VaultSplitView({
     }
     if (isSaving) return;
 
-    const vault = vaults.find(v => v.id === vaultId);
+    const vault = (vaults || []).find(v => v.id === vaultId);
     if (!vault) {
       Alert.alert('Error', 'Vault not found');
       return;
@@ -249,8 +209,8 @@ export function VaultSplitView({
         <View style={styles.listHeader}>
           <SyncStatusIndicator
             isSyncing={isSyncing}
-            lastSyncedAt={lastSyncedAt}
-            syncError={null}
+            lastSyncedAt={lastSyncedAt > 0 ? lastSyncedAt : null}
+            syncError={syncError}
             onSync={handleSync}
           />
           <Pressable style={styles.addButton} onPress={handleNewEntry} accessibilityRole="button" accessibilityLabel="Add new entry">

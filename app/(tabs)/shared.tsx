@@ -7,10 +7,8 @@ import { spacing, radius, typography } from '@/utils/themedStyles';
 import { WebLayout } from '@/components/WebLayout';
 import { appStore$ } from '@/store/appStore';
 import { useValue } from '@legendapp/state/react';
-import { getSharedWithMe, type SharedEntryWithVaultEntry } from '@/core/sharing/sharingService';
 import { decryptString } from '@/core/crypto';
 import { supabase } from '@/services/supabaseClient';
-import { subscribeToSharedEntries } from '@/core/sync/realtimeSubscriptions';
 
 /** Extended type that includes the vault_entry data fetched via join */
 interface SharedEntryDisplay {
@@ -29,22 +27,19 @@ export default function SharedScreen() {
   
   const userId = useValue(appStore$.userId);
   const masterKey = useValue(appStore$.masterKey);
+  const sharedEntries = useValue(appStore$.sharedEntries);
 
-  const [sharedEntries, setSharedEntries] = useState<SharedEntryWithVaultEntry[]>([]);
   const [displayEntries, setDisplayEntries] = useState<SharedEntryDisplay[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const loadSharedEntries = useCallback(async () => {
-    if (!userId) return;
+    if (!userId || !sharedEntries) return;
     setIsLoading(true);
     try {
-      const entries = await getSharedWithMe(userId);
-      setSharedEntries(entries);
-
       // Fetch the actual encrypted_payload from vault_entries
       // The merged RLS policy allows this because the user is in shared_entries
-      if (masterKey && entries.length > 0) {
-        const entryIds = entries.map(e => e.entry_id);
+      if (masterKey && sharedEntries.length > 0) {
+        const entryIds = sharedEntries.map(e => e.entry_id);
         const { data: vaultData, error: vaultError } = await supabase
           .from('vault_entries')
           .select('id, encrypted_payload')
@@ -63,7 +58,7 @@ export default function SharedScreen() {
 
         // Decrypt metadata for display
         const decrypted: SharedEntryDisplay[] = [];
-        for (const entry of entries) {
+        for (const entry of sharedEntries) {
           const encryptedPayload = vaultMap.get(entry.entry_id);
           let title = 'Shared Entry';
           let username = '';
@@ -92,26 +87,15 @@ export default function SharedScreen() {
           });
         }
         setDisplayEntries(decrypted);
+      } else if (sharedEntries.length === 0) {
+        setDisplayEntries([]);
       }
     } catch (error: any) {
       Alert.alert('Error', `Failed to load shared entries: ${error.message}`);
     } finally {
       setIsLoading(false);
     }
-  }, [userId, masterKey]);
-
-  // Subscribe to realtime for new shares
-  const unsubRef = useRef<(() => void) | null>(null);
-  useEffect(() => {
-    if (!userId) return;
-    const { unsubscribe } = subscribeToSharedEntries(userId, () => {
-      loadSharedEntries();
-    });
-    unsubRef.current = unsubscribe;
-    return () => {
-      unsubRef.current?.();
-    };
-  }, [userId, loadSharedEntries]);
+  }, [userId, masterKey, sharedEntries]);
 
   useEffect(() => {
     loadSharedEntries();

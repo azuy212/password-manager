@@ -61,7 +61,7 @@ export default function EntryScreen() {
     if (!params.entryId || !masterKey) return;
     setIsLoadingEntry(true);
     try {
-      const vault = vaults.find(v => v.id === params.vaultId);
+      const vault = (vaults || []).find(v => v.id === params.vaultId);
       if (!vault) { setIsLoadingEntry(false); return; }
 
       const vaultKey = await decryptVaultKey(vault.encryptedEncryptionKey, masterKey);
@@ -99,7 +99,7 @@ export default function EntryScreen() {
 
     setIsSaving(true);
     try {
-      const vault = vaults.find(v => v.id === params.vaultId);
+      const vault = (vaults || []).find(v => v.id === params.vaultId);
       if (!vault) {
         Alert.alert('Error', 'Vault not found');
         return;

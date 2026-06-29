@@ -4,8 +4,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { clearIdentity } from '@/core/auth/identityService';
-import { fullSync, getLastSync } from '@/core/sync/syncService';
-import { appStore$, appActions } from '@/store/appStore';
+import { appStore$, appActions, getSyncState } from '@/store/appStore';
 import { useValue } from '@legendapp/state/react';
 import { useTheme } from '@/hooks/useTheme';
 import { spacing, radius, typography } from '@/utils/themedStyles';
@@ -73,53 +72,24 @@ export default function SettingsScreen() {
   
   const masterKey = useValue(appStore$.masterKey);
   const userId = useValue(appStore$.userId);
-  const isSyncing = useValue(appStore$.isSyncing);
-  const activeVault = useValue(appStore$.activeVault);
+
+  // Sync state from Legend-State
+  const syncs = getSyncState();
+  const vaultsSync = useValue(syncs.vaults);
+  const entriesSync = useValue(syncs.entries);
+
+  const isSyncing = vaultsSync.isSyncing || entriesSync.isSyncing;
+  const lastSyncedAt = Math.max(vaultsSync.lastSyncedAt || 0, entriesSync.lastSyncedAt || 0);
+  const syncError = vaultsSync.error ? 'Vaults sync error' : entriesSync.error ? 'Entries sync error' : null;
 
   const colors = useTheme();
   const insets = useSafeAreaInsets();
   const [isResetting, setIsResetting] = useState(false);
-  const [lastSyncTime, setLastSyncTime] = useState<number | null>(null);
-
-  useEffect(() => {
-    getLastSync().then(ts => {
-      setLastSyncTime(ts > 0 ? ts : null);
-      appActions.setLastSyncedAt(ts > 0 ? ts : null);
-    });
-  }, []);
 
   const handleSync = async () => {
-    if (!masterKey || !userId) {
-      Alert.alert('Error', 'Vault is not unlocked');
-      return;
-    }
-
-    appActions.setSyncing(true);
-    try {
-      const result = await fullSync(userId, masterKey);
-      // Update the store with merged vaults
-      appActions.setVaults(result.mergedVaults);
-
-      // If an active vault is set, reload its entries from AsyncStorage
-      if (activeVault) {
-        const { getEntriesForVault, decryptVaultKey } = await import('@/core/vault/vaultService');
-        const vaultKey = await decryptVaultKey(activeVault.encryptedEncryptionKey, masterKey);
-        const entries = await getEntriesForVault(activeVault.id, vaultKey);
-        appActions.setEntries(entries);
-        vaultKey.destroy();
-      }
-
-      // Update last sync time
-      const newLastSync = Date.now();
-      setLastSyncTime(newLastSync);
-      appActions.setLastSyncedAt(newLastSync);
-
-      Alert.alert('Sync Complete', `Synced ${result.syncedVaults} vault(s) and ${result.syncedEntries} entr${result.syncedEntries === 1 ? 'y' : 'ies'}.`);
-    } catch (error: any) {
-      Alert.alert('Sync Failed', error.message || 'An error occurred during sync.');
-    } finally {
-      appActions.setSyncing(false);
-    }
+    // Legend-State handles sync automatically, but we can trigger a refresh if needed
+    syncs.vaults.refresh();
+    syncs.entries.refresh();
   };
 
   const handleReset = () => {
@@ -185,8 +155,8 @@ export default function SettingsScreen() {
           <Text style={[styles.headerTitle, { marginBottom: 0 }]}>Settings</Text>
           <SyncStatusIndicator
             isSyncing={isSyncing}
-            lastSyncedAt={lastSyncTime}
-            syncError={null}
+            lastSyncedAt={lastSyncedAt > 0 ? lastSyncedAt : null}
+            syncError={syncError}
             onSync={handleSync}
           />
         </View>

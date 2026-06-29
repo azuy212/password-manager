@@ -1,9 +1,9 @@
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { appStore$, appActions } from '@/store/appStore';
+import { appStore$ } from '@/store/appStore';
 import { useValue } from '@legendapp/state/react';
-import { getVaults, createVault, deleteVault } from '@/core/vault/vaultService';
+import { createVault, deleteVault } from '@/core/vault/vaultService';
 import type { Vault } from '@/types/vault';
 import React, { useCallback, useMemo, useState } from 'react';
 import {
@@ -92,14 +92,13 @@ const vaultItemStyles = StyleSheet.create({
 // ─── Main Screen ───
 
 export default function VaultsScreen() {
-  const [vaults, setVaults] = useState<Vault[]>([]);
   const [showNewVaultModal, setShowNewVaultModal] = useState(false);
   const [newVaultName, setNewVaultName] = useState('');
-  const [isLoadingVaults, setIsLoadingVaults] = useState(false);
   const [isCreatingVault, setIsCreatingVault] = useState(false);
   const router = useRouter();
   
   const masterKey = useValue(appStore$.masterKey);
+  const vaults = useValue(appStore$.vaults);
 
   const colors = useTheme();
   const insets = useSafeAreaInsets();
@@ -107,26 +106,6 @@ export default function VaultsScreen() {
   // Animated values — use useMemo to keep stable references
   const modalScale = useMemo(() => new Animated.Value(0.9), []);
   const modalOpacity = useMemo(() => new Animated.Value(0), []);
-
-  const loadVaults = useCallback(async () => {
-    setIsLoadingVaults(true);
-    try {
-      const data = await getVaults();
-      setVaults(data);
-      appActions.setVaults(data);
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Failed to load vaults';
-      Alert.alert('Error', message);
-    } finally {
-      setIsLoadingVaults(false);
-    }
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      loadVaults();
-    }, [loadVaults])
-  );
 
   const handleCreateVault = useCallback(() => {
     setNewVaultName('');
@@ -179,14 +158,13 @@ export default function VaultsScreen() {
         masterKey
       );
       closeModal();
-      loadVaults();
     } catch {
       Alert.alert('Error', 'Failed to create vault');
       closeModal();
     } finally {
       setIsCreatingVault(false);
     }
-  }, [newVaultName, masterKey, isCreatingVault, closeModal, loadVaults]);
+  }, [newVaultName, masterKey, isCreatingVault, closeModal]);
 
   const handleDeleteVault = useCallback((vault: Vault) => {
     Alert.alert(
@@ -200,7 +178,6 @@ export default function VaultsScreen() {
           onPress: async () => {
             try {
               await deleteVault(vault.id);
-              loadVaults();
             } catch (error: unknown) {
               const message = error instanceof Error ? error.message : 'Failed to delete vault';
               Alert.alert('Error', message);
@@ -209,7 +186,7 @@ export default function VaultsScreen() {
         },
       ]
     );
-  }, [loadVaults]);
+  }, []);
 
   const handleOpenVault = useCallback((vault: Vault) => {
     router.push({
@@ -237,12 +214,12 @@ export default function VaultsScreen() {
         <View style={styles.header}>
           <Text style={styles.headerTitle}>My Vaults</Text>
           <Text style={styles.headerSubtitle}>
-            {vaults.length} {vaults.length === 1 ? 'vault' : 'vaults'}
+            {(vaults || []).length} {(vaults || []).length === 1 ? 'vault' : 'vaults'}
           </Text>
         </View>
 
         <FlatList
-          data={vaults}
+          data={vaults || []}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
           contentContainerStyle={styles.list}
@@ -250,17 +227,13 @@ export default function VaultsScreen() {
           maxToRenderPerBatch={10}
           windowSize={5}
           ListEmptyComponent={
-            isLoadingVaults ? (
-              <InlineLoader />
-            ) : (
-              <View style={styles.empty}>
-                <Ionicons name="folder-open-outline" size={64} color={colors.textTertiary} />
-                <Text style={styles.emptyText}>No vaults yet</Text>
-                <Text style={styles.emptySubtext}>
-                  Tap + to create your first vault
-                </Text>
-              </View>
-            )
+            <View style={styles.empty}>
+              <Ionicons name="folder-open-outline" size={64} color={colors.textTertiary} />
+              <Text style={styles.emptyText}>No vaults yet</Text>
+              <Text style={styles.emptySubtext}>
+                Tap + to create your first vault
+              </Text>
+            </View>
           }
         />
 

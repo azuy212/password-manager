@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   Alert,
   StyleSheet,
@@ -11,8 +11,7 @@ import {
 import { FlatList } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getEntriesForVault, decryptVaultKey } from '../core/vault/vaultService';
-import { getLastSync, fullSync } from '../core/sync/syncService';
-import { appStore$, appActions } from '../store/appStore';
+import { appStore$, getSyncState } from '../store/appStore';
 import { useValue } from '@legendapp/state/react';
 import type { VaultEntry } from '../types/vault';
 import { useTheme } from '../hooks/useTheme';
@@ -93,23 +92,23 @@ export default function VaultScreen() {
   const masterKey = useValue(appStore$.masterKey);
   const userId = useValue(appStore$.userId);
   const vaults = useValue(appStore$.vaults);
-  const isSyncing = useValue(appStore$.isSyncing);
-  const lastSyncedAt = useValue(appStore$.lastSyncedAt);
+
+  // Sync state from Legend-State
+  const syncs = getSyncState();
+  const vaultsSync = useValue(syncs.vaults);
+  const entriesSync = useValue(syncs.entries);
+
+  const isSyncing = vaultsSync.isSyncing || entriesSync.isSyncing;
+  const lastSyncedAt = Math.max(vaultsSync.lastSyncedAt || 0, entriesSync.lastSyncedAt || 0);
+  const syncError = vaultsSync.error ? 'Vaults sync error' : entriesSync.error ? 'Entries sync error' : null;
 
   const colors = useTheme();
   const insets = useSafeAreaInsets();
   const isDesktop = useIsDesktop();
 
-  // Load last sync time on mount
-  useEffect(() => {
-    getLastSync().then(ts => {
-      appActions.setLastSyncedAt(ts > 0 ? ts : null);
-    });
-  }, []);
-
   const loadEntries = useCallback(async () => {
     const currentMasterKey = appStore$.masterKey.peek();
-    if (!params.vaultId || !currentMasterKey) return;
+    if (!params.vaultId || !currentMasterKey || !vaults) return;
     const vault = vaults.find(v => v.id === params.vaultId);
     if (!vault) return;
 
@@ -153,66 +152,11 @@ export default function VaultScreen() {
     });
   }, [router, params.vaultId]);
 
-  // Use refs to avoid callback recreation issues during async operations
-  const vaultIdRef = useRef(params.vaultId as string);
-  const masterKeyRef = useRef(masterKey);
-  
-  useEffect(() => {
-    vaultIdRef.current = params.vaultId as string;
-    masterKeyRef.current = masterKey;
-  }, [params.vaultId, masterKey]);
-
   const handleSync = useCallback(async () => {
-    console.log('[VaultSync] handleSync triggered');
-    const currentVaultId = vaultIdRef.current;
-    const currentMasterKey = masterKeyRef.current;
-
-    console.log('[VaultSync] vaultId:', currentVaultId, 'masterKey:', !!currentMasterKey, 'userId:', userId);
-
-    if (!currentMasterKey || !currentVaultId || !userId) {
-      console.log('[VaultSync] Early return - missing required values');
-      Alert.alert('Error', 'Vault is not unlocked');
-      return;
-    }
-
-    // Prevent duplicate syncs
-    if (appStore$.isSyncing.peek()) {
-      console.log('[VaultSync] Already syncing, skipping');
-      return;
-    }
-
-    console.log('[VaultSync] Setting syncing to true');
-    appActions.setSyncing(true);
-    try {
-      console.log('[VaultSync] Calling fullSync with userId:', userId);
-
-      const result = await fullSync(userId, currentMasterKey);
-      console.log('[VaultSync] fullSync completed, syncedVaults:', result.syncedVaults, 'syncedEntries:', result.syncedEntries);
-      appActions.setVaults(result.mergedVaults);
-
-      // Reload entries for current vault
-      const vault = result.mergedVaults.find(v => v.id === currentVaultId);
-      console.log('[VaultSync] Found current vault:', !!vault);
-      if (vault) {
-        console.log('[VaultSync] Decrypting vault key and loading entries...');
-        const vaultKey = await decryptVaultKey(vault.encryptedEncryptionKey, currentMasterKey);
-        const data = await getEntriesForVault(currentVaultId, vaultKey);
-        console.log('[VaultSync] Loaded', data.length, 'entries');
-        setEntries(data);
-        vaultKey.destroy();
-      }
-
-      const newLastSync = Date.now();
-      appActions.setLastSyncedAt(newLastSync);
-      console.log('[VaultSync] Sync completed successfully');
-    } catch (error: any) {
-      console.error('[VaultSync] Error during sync:', error);
-      Alert.alert('Sync Failed', error.message || 'An error occurred during sync.');
-    } finally {
-      console.log('[VaultSync] Setting syncing to false');
-      appActions.setSyncing(false);
-    }
-  }, [userId]);
+    // Legend-State handles sync automatically, but we can trigger a refresh if needed
+    syncs.vaults.refresh();
+    syncs.entries.refresh();
+  }, [syncs]);
 
   const styles = useMemo(
     () => createStyles(colors, insets),
@@ -246,18 +190,18 @@ export default function VaultScreen() {
               <Text style={styles.title} numberOfLines={1}>{vaultName}</Text>
               <SyncStatusIndicator
                 isSyncing={isSyncing}
-                lastSyncedAt={lastSyncedAt}
-                syncError={null}
+                lastSyncedAt={lastSyncedAt > 0 ? lastSyncedAt : null}
+                syncError={syncError}
                 onSync={handleSync}
               />
             </View>
             <Text style={styles.entryCount}>
-              {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
+              {(entries || []).length} {(entries || []).length === 1 ? 'entry' : 'entries'}
             </Text>
           </View>
 
           <FlatList
-            data={entries}
+            data={entries || []}
             keyExtractor={(item) => item.id}
             renderItem={renderItem}
             contentContainerStyle={styles.list}
