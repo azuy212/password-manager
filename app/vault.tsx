@@ -1,28 +1,28 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useValue } from '@legendapp/state/react';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   Alert,
+  Pressable,
   StyleSheet,
   Text,
   View,
-  Pressable,
 } from 'react-native';
 import { FlatList } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getEntriesForVault, decryptVaultKey } from '../core/vault/vaultService';
-import { getMasterKey } from '../core/masterKeyStore';
-import { appStore$, appActions, getSyncState } from '../store/appStore';
-import { useValue } from '@legendapp/state/react';
-import type { VaultEntry } from '../types/vault';
-import { useTheme } from '../hooks/useTheme';
-import { useIsDesktop } from '../hooks/useBreakpoint';
-import { spacing, radius, typography } from '../utils/themedStyles';
-import type { ThemeColors } from '../constants/Colors';
 import { InlineLoader } from '../components/InlineLoader';
 import { SyncStatusIndicator } from '../components/SyncStatusIndicator';
-import { WebLayout } from '../components/WebLayout';
 import { VaultSplitView } from '../components/VaultSplitView';
+import { WebLayout } from '../components/WebLayout';
+import type { ThemeColors } from '../constants/Colors';
+import { getMasterKey } from '../core/masterKeyStore';
+import { decryptVaultKey, getEntriesForVault } from '../core/vault/vaultService';
+import { useIsDesktop } from '../hooks/useBreakpoint';
+import { useTheme } from '../hooks/useTheme';
+import { appActions, appStore$, getSyncState } from '../store/appStore';
+import type { VaultEntry } from '../types/vault';
+import { radius, spacing, typography } from '../utils/themedStyles';
 
 // ─── Static base styles for VaultEntryItem ───
 
@@ -156,10 +156,12 @@ export default function VaultScreen() {
   }, [router, params.vaultId]);
 
   const handleSync = useCallback(async () => {
-    // Legend-State handles sync automatically, but we can trigger a refresh if needed
-    syncs.vaults.sync();
-    syncs.entries.sync();
-  }, [syncs]);
+    await Promise.all([
+      syncs.vaults.sync(),
+      syncs.entries.sync()
+    ]);
+    await loadEntries();
+  }, [loadEntries]);
 
   const styles = useMemo(
     () => createStyles(colors, insets),

@@ -92,9 +92,11 @@ export default function SettingsScreen() {
   const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   const handleSync = useCallback(async () => {
-    syncs.vaults.sync();
-    syncs.entries.sync();
-  }, [syncs]);
+    await Promise.all([
+      syncs.vaults.sync(),
+      syncs.entries.sync(),
+    ]);
+  }, []);
 
   const handleReset = useCallback(() => {
     Alert.alert(

@@ -3,8 +3,8 @@ import { observablePersistAsyncStorage } from '@legendapp/state/persist-plugins/
 import { configureObservableSync, syncObservable } from '@legendapp/state/sync';
 import { configureSyncedSupabase, syncedSupabase } from '@legendapp/state/sync-plugins/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { supabase } from '../services/supabaseClient';
 import { destroyMasterKey as destroyKeySingleton, setMasterKey as setKeySingleton } from '../core/masterKeyStore';
+import { supabase } from '../services/supabaseClient';
 import type { Database } from '../types/database.types';
 import type { Identity } from '../types/identity';
 
@@ -165,7 +165,6 @@ syncObservable(
       return userId ? (query as any).eq('user_id', userId) : query;
     },
     waitFor: appStore$.userId,
-    realtime: true,
     transform: {
       load: (row: VaultRow): Vault => ({
         id:                    row.id,
@@ -214,7 +213,6 @@ syncObservable(
         : (query as any).eq('vault_id', 'none'); // return empty set safely
     },
     waitFor: appStore$.activeVaultId,
-    realtime: true,
     transform: {
       load: (row: VaultEntryRow): VaultEntry => ({
         id:               row.id,
@@ -257,9 +255,6 @@ syncObservable(
       return userId ? (query as any).eq('shared_with_id', userId) : query;
     },
     waitFor: appStore$.userId,
-    realtime: {
-      filter: `shared_with_id=eq.${appStore$.userId.peek()}`,
-    },
     transform: {
       load: (row: SharedEntryRow): SharedEntry => ({
         id:           row.id,

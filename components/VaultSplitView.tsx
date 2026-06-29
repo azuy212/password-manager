@@ -1,29 +1,29 @@
-import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { CopyableField } from '@/components/CopyableField';
+import { SyncStatusIndicator } from '@/components/SyncStatusIndicator';
+import { getMasterKey } from '@/core/masterKeyStore';
+import { createEntry, decryptVaultKey, deleteEntry, updateEntry } from '@/core/vault/vaultService';
+import { useTheme } from '@/hooks/useTheme';
+import { appStore$, getSyncState } from '@/store/appStore';
+import type { VaultEntry } from '@/types/vault';
+import { radius, spacing, typography } from '@/utils/themedStyles';
+import { Ionicons } from '@expo/vector-icons';
+import { useValue } from '@legendapp/state/react';
+import * as Clipboard from 'expo-clipboard';
+import { useRouter } from 'expo-router';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
+  ActivityIndicator,
+  Alert,
+  Platform,
   Pressable,
   FlatList as RNFlatList,
   StyleSheet,
-  Alert,
-  Platform,
-  ActivityIndicator,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
-import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import * as Clipboard from 'expo-clipboard';
-import { useTheme } from '@/hooks/useTheme';
-import { spacing, radius, typography } from '@/utils/themedStyles';
-import type { VaultEntry } from '@/types/vault';
-import { createEntry, updateEntry, deleteEntry, decryptVaultKey } from '@/core/vault/vaultService';
-import { getMasterKey } from '@/core/masterKeyStore';
-import { appStore$, getSyncState } from '@/store/appStore';
-import { useValue, For } from '@legendapp/state/react';
-import { CopyableField } from '@/components/CopyableField';
-import { SyncStatusIndicator } from '@/components/SyncStatusIndicator';
 
 const ENTRY_LIST_WIDTH = 320;
 
@@ -84,10 +84,12 @@ export function VaultSplitView({
   const [searchQuery, setSearchQuery] = useState('');
 
   const handleSync = useCallback(async () => {
-    // Legend-State handles sync automatically, but we can trigger a refresh if needed
-    syncs.vaults.sync();
-    syncs.entries.sync();
-  }, [syncs]);
+    await Promise.all([
+      syncs.vaults.sync(),
+      syncs.entries.sync(),
+    ]);
+    onAddEntry?.();
+  }, [onAddEntry]);
 
   // Load entry data when selected
   const handleSelectEntry = useCallback((entry: VaultEntry) => {
