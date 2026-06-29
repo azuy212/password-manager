@@ -34,6 +34,7 @@ export default function UnlockScreen() {
   const insets = useSafeAreaInsets();
   const isDesktop = useIsDesktop();
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const passwordRef = useRef<TextInput>(null);
 
   // Use fine-grained loading state
   const isLoading = useValue(appStore$.isLoading);
@@ -155,6 +156,9 @@ export default function UnlockScreen() {
           value={email}
           onChangeText={setEmail}
           autoFocus
+          returnKeyType="next"
+          blurOnSubmit={false}
+          onSubmitEditing={() => setTimeout(() => passwordRef.current?.focus(), 50)}
         />
 
         <TextInput
@@ -162,8 +166,12 @@ export default function UnlockScreen() {
           placeholder="Master Password"
           placeholderTextColor={colors.placeholder}
           secureTextEntry
+          autoCapitalize="none"
+          textContentType="none"
+          autoComplete="off"
           value={password}
           onChangeText={setPassword}
+          ref={passwordRef}
           returnKeyType="done"
           onSubmitEditing={handleSubmit}
         />

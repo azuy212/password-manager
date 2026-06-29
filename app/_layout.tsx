@@ -1,3 +1,4 @@
+import 'react-native-get-random-values';
 import { ThemeProvider, DefaultTheme } from '@react-navigation/native';
 import { Stack, useRouter, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';

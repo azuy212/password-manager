@@ -79,8 +79,10 @@ export async function createVault(input: VaultInput, masterKey: SecureKey): Prom
 
   const newVault: Vault = {
     id: uuidv4(),
+    userId: appStore$.userId.peek() ?? '',
     name: input.name,
     encryptedEncryptionKey,
+    version: 1,
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };

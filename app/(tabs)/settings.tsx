@@ -1,19 +1,19 @@
-import React, { useMemo, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, Alert, Pressable, Modal, TextInput, ActivityIndicator } from 'react-native';
-import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { clearIdentity, changePassword } from '@/core/auth/identityService';
-import { getMasterKey } from '@/core/masterKeyStore';
-import { reEncryptVaultKeys } from '@/core/vault/vaultService';
-import { appStore$, appActions, getSyncState } from '@/store/appStore';
-import { useValue } from '@legendapp/state/react';
-import { useTheme } from '@/hooks/useTheme';
-import { spacing, radius, typography } from '@/utils/themedStyles';
 import { LoadingOverlay } from '@/components/LoadingOverlay';
 import { SyncStatusIndicator } from '@/components/SyncStatusIndicator';
 import { WebLayout } from '@/components/WebLayout';
+import { changePassword, clearIdentity } from '@/core/auth/identityService';
+import { getMasterKey } from '@/core/masterKeyStore';
+import { reEncryptVaultKeys } from '@/core/vault/vaultService';
+import { useTheme } from '@/hooks/useTheme';
+import { appActions, getSyncState } from '@/store/appStore';
+import { radius, spacing, typography } from '@/utils/themedStyles';
+import { Ionicons } from '@expo/vector-icons';
+import { useValue } from '@legendapp/state/react';
+import { useRouter } from 'expo-router';
+import React, { useCallback, useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Shared styles for SettingItem (static, no dependencies on insets)
 const itemStyles = StyleSheet.create({
@@ -77,8 +77,8 @@ export default function SettingsScreen() {
   const vaultsSync = useValue(syncs.vaults);
   const entriesSync = useValue(syncs.entries);
 
-  const isSyncing = vaultsSync.isSyncing || entriesSync.isSyncing;
-  const lastSyncedAt = Math.max(vaultsSync.lastSyncedAt || 0, entriesSync.lastSyncedAt || 0);
+  const isSyncing = !!(vaultsSync.isGetting || entriesSync.isGetting);
+  const lastSyncedAt = Math.max(vaultsSync.lastSync || 0, entriesSync.lastSync || 0);
   const syncError = vaultsSync.error ? 'Vaults sync error' : entriesSync.error ? 'Entries sync error' : null;
 
   const colors = useTheme();
@@ -92,8 +92,8 @@ export default function SettingsScreen() {
   const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   const handleSync = useCallback(async () => {
-    syncs.vaults.refresh();
-    syncs.entries.refresh();
+    syncs.vaults.sync();
+    syncs.entries.sync();
   }, [syncs]);
 
   const handleReset = useCallback(() => {

@@ -12,7 +12,7 @@ import { FlatList } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getEntriesForVault, decryptVaultKey } from '../core/vault/vaultService';
 import { getMasterKey } from '../core/masterKeyStore';
-import { appStore$, getSyncState } from '../store/appStore';
+import { appStore$, appActions, getSyncState } from '../store/appStore';
 import { useValue } from '@legendapp/state/react';
 import type { VaultEntry } from '../types/vault';
 import { useTheme } from '../hooks/useTheme';
@@ -98,8 +98,8 @@ export default function VaultScreen() {
   const vaultsSync = useValue(syncs.vaults);
   const entriesSync = useValue(syncs.entries);
 
-  const isSyncing = vaultsSync.isSyncing || entriesSync.isSyncing;
-  const lastSyncedAt = Math.max(vaultsSync.lastSyncedAt || 0, entriesSync.lastSyncedAt || 0);
+  const isSyncing = !!(vaultsSync.isGetting || entriesSync.isGetting);
+  const lastSyncedAt = Math.max(vaultsSync.lastSync || 0, entriesSync.lastSync || 0);
   const syncError = vaultsSync.error ? 'Vaults sync error' : entriesSync.error ? 'Entries sync error' : null;
 
   const colors = useTheme();
@@ -134,8 +134,11 @@ export default function VaultScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      if (params.vaultId) {
+        appActions.setActiveVault(params.vaultId);
+      }
       loadEntries();
-    }, [loadEntries])
+    }, [params.vaultId, loadEntries])
   );
 
   const handleAddEntry = useCallback(() => {
@@ -154,8 +157,8 @@ export default function VaultScreen() {
 
   const handleSync = useCallback(async () => {
     // Legend-State handles sync automatically, but we can trigger a refresh if needed
-    syncs.vaults.refresh();
-    syncs.entries.refresh();
+    syncs.vaults.sync();
+    syncs.entries.sync();
   }, [syncs]);
 
   const styles = useMemo(

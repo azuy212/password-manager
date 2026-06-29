@@ -1,6 +1,6 @@
 import { observable, syncState } from '@legendapp/state';
 import { observablePersistAsyncStorage } from '@legendapp/state/persist-plugins/async-storage';
-import { configureSynced, syncObservable } from '@legendapp/state/sync';
+import { configureObservableSync, syncObservable } from '@legendapp/state/sync';
 import { configureSyncedSupabase, syncedSupabase } from '@legendapp/state/sync-plugins/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../services/supabaseClient';
@@ -63,7 +63,7 @@ const iso = (epoch: number | undefined): string | null =>
 // ---------------------------------------------------------------------------
 // Global sync/persist configuration
 // ---------------------------------------------------------------------------
-configureSynced({
+configureObservableSync({
   persist: {
     plugin: observablePersistAsyncStorage({ AsyncStorage }),
   },
@@ -165,7 +165,7 @@ syncObservable(
       return userId ? (query as any).eq('user_id', userId) : query;
     },
     waitFor: appStore$.userId,
-    realtime: { filter: () => `user_id=eq.${appStore$.userId.peek()}` },
+    realtime: true,
     transform: {
       load: (row: VaultRow): Vault => ({
         id:                    row.id,
@@ -177,13 +177,15 @@ syncObservable(
         updatedAt:             ms(row.updated_at),
         deletedAt:             msOpt(row.deleted_at),
       }),
-      save: (vault: Vault): Partial<VaultRow> => ({
+      save: (vault: Vault): VaultRow => ({
         id:                       vault.id,
         user_id:                  appStore$.userId.peek() ?? '',
         name:                     vault.name,
         encrypted_encryption_key: vault.encryptedEncryptionKey,
-        deleted_at:               iso(vault.deletedAt),
+        version:                  vault.version ?? 1,
+        created_at:               new Date(vault.createdAt).toISOString(),
         updated_at:               new Date().toISOString(),
+        deleted_at:               iso(vault.deletedAt),
       }),
     },
   }),
@@ -212,12 +214,7 @@ syncObservable(
         : (query as any).eq('vault_id', 'none'); // return empty set safely
     },
     waitFor: appStore$.activeVaultId,
-    realtime: {
-      filter: () => {
-        const vaultId = appStore$.activeVaultId.peek();
-        return vaultId ? `vault_id=eq.${vaultId}` : undefined;
-      },
-    },
+    realtime: true,
     transform: {
       load: (row: VaultEntryRow): VaultEntry => ({
         id:               row.id,
@@ -228,12 +225,14 @@ syncObservable(
         updatedAt:        ms(row.updated_at),
         deletedAt:        msOpt(row.deleted_at),
       }),
-      save: (entry: VaultEntry): Partial<VaultEntryRow> => ({
-        id:               entry.id,
-        vault_id:         entry.vaultId,
+      save: (entry: VaultEntry): VaultEntryRow => ({
+        id:                entry.id,
+        vault_id:          entry.vaultId,
         encrypted_payload: entry.encryptedPayload,
-        deleted_at:       iso(entry.deletedAt),
-        updated_at:       new Date().toISOString(),
+        version:           entry.version ?? 1,
+        created_at:        new Date(entry.createdAt).toISOString(),
+        updated_at:        new Date().toISOString(),
+        deleted_at:        iso(entry.deletedAt),
       }),
     },
   }),
@@ -259,7 +258,7 @@ syncObservable(
     },
     waitFor: appStore$.userId,
     realtime: {
-      filter: () => `shared_with_id=eq.${appStore$.userId.peek()}`,
+      filter: `shared_with_id=eq.${appStore$.userId.peek()}`,
     },
     transform: {
       load: (row: SharedEntryRow): SharedEntry => ({
@@ -272,14 +271,15 @@ syncObservable(
         updatedAt:    ms(row.updated_at),
         deletedAt:    msOpt(row.deleted_at),
       }),
-      save: (entry: SharedEntry): Partial<SharedEntryRow> => ({
+      save: (entry: SharedEntry): SharedEntryRow => ({
         id:             entry.id,
         entry_id:       entry.entryId,
         owner_id:       entry.ownerId,
         shared_with_id: entry.sharedWithId,
         encrypted_key:  entry.encryptedKey,
-        deleted_at:     iso(entry.deletedAt),
+        created_at:     new Date(entry.createdAt).toISOString(),
         updated_at:     new Date().toISOString(),
+        deleted_at:     iso(entry.deletedAt),
       }),
     },
   }),

@@ -22,9 +22,10 @@ export interface VaultEntry {
 
 export interface Vault {
   id: string;
+  userId: string;
   name: string;
   encryptedEncryptionKey: string;
-  version?: number;
+  version: number;
   deletedAt?: number;
   createdAt: number;
   updatedAt: number;

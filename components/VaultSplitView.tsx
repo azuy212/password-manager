@@ -71,8 +71,8 @@ export function VaultSplitView({
   const vaultsSync = useValue(syncs.vaults);
   const entriesSync = useValue(syncs.entries);
 
-  const isSyncing = vaultsSync.isSyncing || entriesSync.isSyncing;
-  const lastSyncedAt = Math.max(vaultsSync.lastSyncedAt || 0, entriesSync.lastSyncedAt || 0);
+  const isSyncing = !!(vaultsSync.isGetting || entriesSync.isGetting);
+  const lastSyncedAt = Math.max(vaultsSync.lastSync || 0, entriesSync.lastSync || 0);
   const syncError = vaultsSync.error ? 'Vaults sync error' : entriesSync.error ? 'Entries sync error' : null;
 
   const [selectedEntry, setSelectedEntry] = useState<VaultEntry | null>(null);
@@ -85,8 +85,8 @@ export function VaultSplitView({
 
   const handleSync = useCallback(async () => {
     // Legend-State handles sync automatically, but we can trigger a refresh if needed
-    syncs.vaults.refresh();
-    syncs.entries.refresh();
+    syncs.vaults.sync();
+    syncs.entries.sync();
   }, [syncs]);
 
   // Load entry data when selected
