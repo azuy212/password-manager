@@ -2,7 +2,7 @@ import VaultEntryItem from '@/components/VaultEntryItem';
 import { Ionicons } from '@expo/vector-icons';
 import { useValue } from '@legendapp/state/react';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Pressable,
@@ -81,6 +81,14 @@ export default function VaultScreen() {
       loadEntries();
     }, [params.vaultId, loadEntries])
   );
+
+  const wasGettingRef = useRef(entriesSync.isGetting);
+  useEffect(() => {
+    if (wasGettingRef.current && !entriesSync.isGetting && params.vaultId) {
+      loadEntries();
+    }
+    wasGettingRef.current = entriesSync.isGetting;
+  }, [entriesSync.isGetting, params.vaultId, loadEntries]);
 
   const handleAddEntry = useCallback(() => {
     router.push({
