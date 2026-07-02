@@ -27,7 +27,10 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
-      "./crypto-native/plugin.js"
+      "expo-font",
+      "expo-splash-screen",
+      "expo-status-bar",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,

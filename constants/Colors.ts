@@ -168,4 +168,5 @@ const light: ThemeColors = {
 export default {
   light,
   dark,
+  unspecified: dark, // Default to dark theme if no preference is set
 };
