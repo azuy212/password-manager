@@ -9,6 +9,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { FlatList } from 'react-native-gesture-handler';
@@ -22,6 +23,7 @@ import { useCsvImport } from '../hooks/useCsvImport';
 import { getMasterKey } from '../core/masterKeyStore';
 import { decryptVaultKey, getEntriesForVault } from '../core/vault/vaultService';
 import { useIsDesktop } from '../hooks/useBreakpoint';
+import { useEntrySearch } from '../hooks/useEntrySearch';
 import { useTheme } from '../hooks/useTheme';
 import { appActions, appStore$, getSyncState } from '../store/appStore';
 import type { VaultEntry } from '../types/vault';
@@ -139,6 +141,7 @@ export default function VaultScreen() {
   );
 
   const vaultName = params.vaultName ?? '';
+  const { searchQuery, setSearchQuery, filteredEntries, isSearching } = useEntrySearch(entries);
 
   return (
     <WebLayout>
@@ -178,12 +181,33 @@ export default function VaultScreen() {
               </View>
             </View>
             <Text style={styles.entryCount}>
-              {(entries).length} {(entries).length === 1 ? 'entry' : 'entries'}
+              {filteredEntries.length} {filteredEntries.length === 1 ? 'entry' : 'entries'}
+              {isSearching ? ' (filtered)' : ''}
             </Text>
           </View>
 
+          {/* Search */}
+          <View style={styles.searchContainer}>
+            <Ionicons name="search" size={18} color={colors.textTertiary} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search entries"
+              placeholderTextColor={colors.textTertiary}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="search"
+            />
+            {searchQuery ? (
+              <Pressable onPress={() => setSearchQuery('')} accessibilityRole="button" accessibilityLabel="Clear search">
+                <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
+              </Pressable>
+            ) : null}
+          </View>
+
           <FlatList
-            data={entries}
+            data={filteredEntries}
             keyExtractor={(item) => item.id}
             renderItem={renderItem}
             refreshing={refreshing}
@@ -198,9 +222,11 @@ export default function VaultScreen() {
               ) : (
                 <View style={styles.empty}>
                   <Ionicons name="key-outline" size={64} color={colors.textTertiary} />
-                  <Text style={styles.emptyText}>No entries yet</Text>
+                  <Text style={styles.emptyText}>
+                    {isSearching ? 'No matching entries' : 'No entries yet'}
+                  </Text>
                   <Text style={styles.emptySubtext}>
-                    Tap + to add a password
+                    {isSearching ? 'No entries match your search.' : 'Tap + to add a password'}
                   </Text>
                 </View>
               )
@@ -249,6 +275,22 @@ const createStyles = (colors: ThemeColors, insets: ReturnType<typeof useSafeArea
     },
     headerActionBtn: {
       padding: spacing.xs,
+    },
+    searchContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.sm,
+      gap: spacing.sm,
+      backgroundColor: colors.surface,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    searchInput: {
+      flex: 1,
+      ...typography.body,
+      color: colors.text,
+      paddingVertical: spacing.xs,
     },
     title: {
       ...typography.h3,
