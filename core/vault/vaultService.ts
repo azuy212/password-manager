@@ -29,14 +29,17 @@ async function encryptEntryContent(
   input: VaultEntryInput,
   key: SecureKey
 ): Promise<string> {
-  const content = JSON.stringify({
+  const content: Record<string, unknown> = {
     title: input.title,
     username: input.username,
     password: input.password,
     notes: input.notes || '',
     url: input.url || '',
-  });
-  return encryptString(content, key);
+  };
+  if (input.extras && Object.keys(input.extras).length > 0) {
+    content.extras = input.extras;
+  }
+  return encryptString(JSON.stringify(content), key);
 }
 
 /**
@@ -57,6 +60,7 @@ async function decryptEntryContent(
     password: content.password || '',
     notes: content.notes || undefined,
     url: content.url || undefined,
+    extras: content.extras ?? undefined,
     createdAt: 0,
     updatedAt: 0,
   };

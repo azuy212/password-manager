@@ -4,6 +4,7 @@ import { useValue } from '@legendapp/state/react';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Pressable,
   StyleSheet,
@@ -17,6 +18,7 @@ import { SyncStatusIndicator } from '../components/SyncStatusIndicator';
 import { VaultSplitView } from '../components/VaultSplitView';
 import { WebLayout } from '../components/WebLayout';
 import type { ThemeColors } from '../constants/Colors';
+import { useCsvImport } from '../hooks/useCsvImport';
 import { getMasterKey } from '../core/masterKeyStore';
 import { decryptVaultKey, getEntriesForVault } from '../core/vault/vaultService';
 import { useIsDesktop } from '../hooks/useBreakpoint';
@@ -104,6 +106,8 @@ export default function VaultScreen() {
     });
   }, [router, params.vaultId]);
 
+  const { isImporting, importCsvFromFile } = useCsvImport(loadEntries);
+
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
 
@@ -152,12 +156,26 @@ export default function VaultScreen() {
           <View style={styles.vaultHeader}>
             <View style={styles.headerTop}>
               <Text style={styles.title} numberOfLines={1}>{vaultName}</Text>
-              <SyncStatusIndicator
-                isSyncing={isSyncing}
-                lastSyncedAt={lastSyncedAt > 0 ? lastSyncedAt : null}
-                syncError={syncError}
-                onSync={handleRefresh}
-              />
+              <View style={styles.headerActions}>
+                {isImporting ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <Pressable
+                    onPress={() => importCsvFromFile(params.vaultId)}
+                    style={styles.headerActionBtn}
+                    accessibilityRole="button"
+                    accessibilityLabel="Import CSV"
+                  >
+                    <Ionicons name="cloud-upload-outline" size={20} color={colors.primary} />
+                  </Pressable>
+                )}
+                <SyncStatusIndicator
+                  isSyncing={isSyncing}
+                  lastSyncedAt={lastSyncedAt > 0 ? lastSyncedAt : null}
+                  syncError={syncError}
+                  onSync={handleRefresh}
+                />
+              </View>
             </View>
             <Text style={styles.entryCount}>
               {(entries).length} {(entries).length === 1 ? 'entry' : 'entries'}
@@ -223,6 +241,14 @@ const createStyles = (colors: ThemeColors, insets: ReturnType<typeof useSafeArea
       justifyContent: 'space-between',
       alignItems: 'center',
       marginBottom: spacing.xs,
+    },
+    headerActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+    },
+    headerActionBtn: {
+      padding: spacing.xs,
     },
     title: {
       ...typography.h3,

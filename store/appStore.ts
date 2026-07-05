@@ -176,16 +176,32 @@ syncObservable(
         updatedAt:             ms(row.updated_at),
         deletedAt:             msOpt(row.deleted_at),
       }),
-      save: (vault: Vault): VaultRow => ({
-        id:                       vault.id,
-        user_id:                  appStore$.userId.peek() ?? '',
-        name:                     vault.name,
-        encrypted_encryption_key: vault.encryptedEncryptionKey,
-        version:                  vault.version ?? 1,
-        created_at:               new Date(vault.createdAt).toISOString(),
-        updated_at:               new Date().toISOString(),
-        deleted_at:               iso(vault.deletedAt),
-      }),
+      save: (vault: Vault | Vault[]): any => {
+        // Handle full array (called by doChangeRemote)
+        if (Array.isArray(vault)) {
+          return vault.map(v => ({
+            id:                       v.id,
+            user_id:                  appStore$.userId.peek() ?? '',
+            name:                     v.name,
+            encrypted_encryption_key: v.encryptedEncryptionKey,
+            version:                  v.version ?? 1,
+            created_at:               v.createdAt ? new Date(v.createdAt).toISOString() : new Date(0).toISOString(),
+            updated_at:               new Date().toISOString(),
+            deleted_at:               iso(v.deletedAt),
+          }));
+        }
+        const v = vault as Vault;
+        return {
+          id:                       v.id,
+          user_id:                  appStore$.userId.peek() ?? '',
+          name:                     v.name,
+          encrypted_encryption_key: v.encryptedEncryptionKey,
+          version:                  v.version ?? 1,
+          created_at:               v.createdAt ? new Date(v.createdAt).toISOString() : new Date(0).toISOString(),
+          updated_at:               new Date().toISOString(),
+          deleted_at:               iso(v.deletedAt),
+        };
+      },
     },
   }),
 );
@@ -212,7 +228,7 @@ syncObservable(
         ? (query as any).eq('vault_id', activeVaultId)
         : (query as any).eq('vault_id', 'none'); // return empty set safely
     },
-    waitFor: appStore$.activeVaultId,
+    waitFor: () => appStore$.activeVaultId.get() && appStore$.userId.get(),
     transform: {
       load: (row: VaultEntryRow): VaultEntry => ({
         id:               row.id,
@@ -223,15 +239,39 @@ syncObservable(
         updatedAt:        ms(row.updated_at),
         deletedAt:        msOpt(row.deleted_at),
       }),
-      save: (entry: VaultEntry): VaultEntryRow => ({
-        id:                entry.id,
-        vault_id:          entry.vaultId,
-        encrypted_payload: entry.encryptedPayload,
-        version:           entry.version ?? 1,
-        created_at:        new Date(entry.createdAt).toISOString(),
-        updated_at:        new Date().toISOString(),
-        deleted_at:        iso(entry.deletedAt),
-      }),
+      save: (entry: VaultEntry | Record<string, VaultEntry>): any => {
+        // Legend-State calls save() in two contexts:
+        //   1. doChangeRemote: on the FULL observable value (Record<string, VaultEntry>)
+        //   2. transformOut:    on INDIVIDUAL items (VaultEntry)
+        // We must handle both.
+        if (entry && typeof entry === 'object' && !('id' in entry)) {
+          // Full record — apply mapping to each item
+          const result: Record<string, any> = {};
+          for (const key of Object.keys(entry)) {
+            const e = (entry as Record<string, VaultEntry>)[key];
+            result[key] = {
+              id:                e.id,
+              vault_id:          e.vaultId,
+              encrypted_payload: e.encryptedPayload,
+              version:           e.version ?? 1,
+              created_at:        e.createdAt ? new Date(e.createdAt).toISOString() : new Date(0).toISOString(),
+              updated_at:        new Date().toISOString(),
+              deleted_at:        iso(e.deletedAt),
+            };
+          }
+          return result;
+        }
+        const e = entry as VaultEntry;
+        return {
+          id:                e.id,
+          vault_id:          e.vaultId,
+          encrypted_payload: e.encryptedPayload,
+          version:           e.version ?? 1,
+          created_at:        e.createdAt ? new Date(e.createdAt).toISOString() : new Date(0).toISOString(),
+          updated_at:        new Date().toISOString(),
+          deleted_at:        iso(e.deletedAt),
+        };
+      },
     },
   }),
 );
@@ -266,16 +306,31 @@ syncObservable(
         updatedAt:    ms(row.updated_at),
         deletedAt:    msOpt(row.deleted_at),
       }),
-      save: (entry: SharedEntry): SharedEntryRow => ({
-        id:             entry.id,
-        entry_id:       entry.entryId,
-        owner_id:       entry.ownerId,
-        shared_with_id: entry.sharedWithId,
-        encrypted_key:  entry.encryptedKey,
-        created_at:     new Date(entry.createdAt).toISOString(),
-        updated_at:     new Date().toISOString(),
-        deleted_at:     iso(entry.deletedAt),
-      }),
+      save: (entry: SharedEntry | SharedEntry[]): any => {
+        if (Array.isArray(entry)) {
+          return entry.map(e => ({
+            id:             e.id,
+            entry_id:       e.entryId,
+            owner_id:       e.ownerId,
+            shared_with_id: e.sharedWithId,
+            encrypted_key:  e.encryptedKey,
+            created_at:     e.createdAt ? new Date(e.createdAt).toISOString() : new Date(0).toISOString(),
+            updated_at:     new Date().toISOString(),
+            deleted_at:     iso(e.deletedAt),
+          }));
+        }
+        const e = entry as SharedEntry;
+        return {
+          id:             e.id,
+          entry_id:       e.entryId,
+          owner_id:       e.ownerId,
+          shared_with_id: e.sharedWithId,
+          encrypted_key:  e.encryptedKey,
+          created_at:     e.createdAt ? new Date(e.createdAt).toISOString() : new Date(0).toISOString(),
+          updated_at:     new Date().toISOString(),
+          deleted_at:     iso(e.deletedAt),
+        };
+      },
     },
   }),
 );

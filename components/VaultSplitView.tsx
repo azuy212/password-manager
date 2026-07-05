@@ -1,5 +1,6 @@
 import { CopyableField } from '@/components/CopyableField';
 import { SyncStatusIndicator } from '@/components/SyncStatusIndicator';
+import { useCsvImport } from '@/hooks/useCsvImport';
 import { getMasterKey } from '@/core/masterKeyStore';
 import { createEntry, decryptVaultKey, deleteEntry, updateEntry } from '@/core/vault/vaultService';
 import { useTheme } from '@/hooks/useTheme';
@@ -82,6 +83,8 @@ export function VaultSplitView({
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+
+  const { isImporting, importCsvFromFile } = useCsvImport(() => onAddEntry?.());
 
   const handleSync = useCallback(async () => {
     await Promise.all([
@@ -216,6 +219,18 @@ export function VaultSplitView({
             syncError={syncError}
             onSync={handleSync}
           />
+          {isImporting ? (
+            <ActivityIndicator size="small" color={colors.accent} />
+          ) : (
+            <Pressable
+              style={styles.addButton}
+              onPress={() => importCsvFromFile(vaultId)}
+              accessibilityRole="button"
+              accessibilityLabel="Import CSV"
+            >
+              <Ionicons name="cloud-upload-outline" size={18} color={colors.textTertiary} />
+            </Pressable>
+          )}
           <Pressable style={styles.addButton} onPress={handleNewEntry} accessibilityRole="button" accessibilityLabel="Add new entry">
             <Ionicons name="add" size={20} color={colors.accent} />
           </Pressable>

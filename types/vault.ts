@@ -13,6 +13,7 @@ export interface VaultEntry {
   password: string;
   notes?: string;
   url?: string;
+  extras?: Record<string, string | number | boolean>;
   encryptedPayload?: string; // Raw encrypted blob for sync
   version?: number;
   deletedAt?: number;
@@ -50,4 +51,5 @@ export type VaultEntryInput = {
   password: string;
   url?: string;
   notes?: string;
+  extras?: Record<string, string | number | boolean>;
 };
