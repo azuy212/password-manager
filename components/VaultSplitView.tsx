@@ -691,6 +691,7 @@ function createStyles(colors: ReturnType<typeof useTheme>, insets: ReturnType<ty
       flex: 1,
       paddingVertical: spacing.sm,
       color: colors.text,
+      outlineWidth: 0,
       ...typography.body,
     },
     listContent: {

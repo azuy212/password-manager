@@ -15,6 +15,7 @@ type CopyableFieldProps = {
 export function CopyableField({ label, value, isPassword, isMultiline }: CopyableFieldProps) {
   const colors = useTheme();
   const [copied, setCopied] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const handleCopy = async () => {
@@ -23,30 +24,46 @@ export function CopyableField({ label, value, isPassword, isMultiline }: Copyabl
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const displayValue = isPassword ? '••••••••••' : value;
+  const displayValue = isPassword && !showPassword ? '••••••••••' : value;
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.label}>{label}</Text>
-        <Pressable
-          style={[styles.copyButton, copied && styles.copyButtonSuccess]}
-          onPress={handleCopy}
-          accessibilityRole="button"
-          accessibilityLabel={`Copy ${label}`}
-        >
-          {copied ? (
-            <>
-              <Ionicons name="checkmark" size={14} color={colors.success} />
-              <Text style={styles.copiedText}>Copied</Text>
-            </>
-          ) : (
-            <>
-              <Ionicons name="copy-outline" size={14} color={colors.textTertiary} />
-              <Text style={styles.copyText}>Copy</Text>
-            </>
+        <View style={styles.headerActions}>
+          {isPassword && (
+            <Pressable
+              style={styles.iconBtn}
+              onPress={() => setShowPassword((p) => !p)}
+              accessibilityRole="button"
+              accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+            >
+              <Ionicons
+                name={showPassword ? 'eye-off' : 'eye'}
+                size={16}
+                color={colors.textTertiary}
+              />
+            </Pressable>
           )}
-        </Pressable>
+          <Pressable
+            style={[styles.copyButton, copied && styles.copyButtonSuccess]}
+            onPress={handleCopy}
+            accessibilityRole="button"
+            accessibilityLabel={`Copy ${label}`}
+          >
+            {copied ? (
+              <>
+                <Ionicons name="checkmark" size={14} color={colors.success} />
+                <Text style={styles.copiedText}>Copied</Text>
+              </>
+            ) : (
+              <>
+                <Ionicons name="copy-outline" size={14} color={colors.textTertiary} />
+                <Text style={styles.copyText}>Copy</Text>
+              </>
+            )}
+          </Pressable>
+        </View>
       </View>
       <View style={[styles.valueBox, isMultiline && styles.valueBoxMultiline]}>
         <Text
@@ -73,6 +90,15 @@ const createStyles = (colors: ReturnType<typeof useTheme>) =>
       justifyContent: 'space-between',
       marginBottom: spacing.xs,
       marginLeft: spacing.xs,
+    },
+    headerActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+    },
+    iconBtn: {
+      padding: spacing.xs,
+      borderRadius: radius.sm,
     },
     label: {
       ...typography.captionMedium,

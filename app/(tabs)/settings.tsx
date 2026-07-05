@@ -188,11 +188,13 @@ export default function SettingsScreen() {
     },
     headerTitle: {
       ...typography.h2,
+      color: colors.text,
       marginBottom: spacing.lg,
       paddingHorizontal: spacing.sm,
     },
     sectionHeader: {
       ...typography.captionMedium,
+      color: colors.textSecondary,
       textTransform: 'uppercase',
       letterSpacing: 0.5,
       marginBottom: spacing.sm,
