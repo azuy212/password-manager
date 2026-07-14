@@ -15,6 +15,6 @@ export function useTheme(): ThemeColors {
 export function useThemeColor(
   props: { light?: string; dark?: string }
 ): string {
-  const colorScheme = useColorScheme() ?? 'dark';
+  const colorScheme = (useColorScheme() ?? 'dark') as 'light' | 'dark';
   return props[colorScheme] ?? Colors[colorScheme].text;
 }

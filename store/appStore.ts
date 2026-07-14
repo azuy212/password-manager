@@ -3,28 +3,22 @@ import { observablePersistAsyncStorage } from '@legendapp/state/persist-plugins/
 import { configureObservableSync, syncObservable } from '@legendapp/state/sync';
 import { configureSyncedSupabase, syncedSupabase } from '@legendapp/state/sync-plugins/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { destroyMasterKey as destroyKeySingleton, setMasterKey as setKeySingleton } from '../core/masterKeyStore';
+import { destroyAll as destroyAllKeys, setPasswordKey as setPwKey, getPasswordKey } from '../core/keyStore';
 import { supabase } from '../services/supabaseClient';
 import type { Database } from '../types/database.types';
 import type { Identity } from '../types/identity';
 
-// ---------------------------------------------------------------------------
-// DB row types derived from generated Supabase types
-// ---------------------------------------------------------------------------
 type VaultRow          = Database['public']['Tables']['vaults']['Row'];
 type VaultEntryRow     = Database['public']['Tables']['vault_entries']['Row'];
 type SharedEntryRow    = Database['public']['Tables']['shared_entries']['Row'];
 
-// ---------------------------------------------------------------------------
-// App-level camelCase types (what the rest of the app works with)
-// ---------------------------------------------------------------------------
 export interface Vault {
   id: string;
   userId: string;
   name: string;
   encryptedEncryptionKey: string;
   version: number;
-  createdAt: number;   // epoch ms
+  createdAt: number;
   updatedAt: number;
   deletedAt?: number;
 }
@@ -50,9 +44,6 @@ export interface SharedEntry {
   deletedAt?: number;
 }
 
-// ---------------------------------------------------------------------------
-// Transform helpers
-// ---------------------------------------------------------------------------
 const ms  = (iso: string | null | undefined): number =>
   iso ? new Date(iso).getTime() : 0;
 const msOpt = (iso: string | null | undefined): number | undefined =>
@@ -60,9 +51,6 @@ const msOpt = (iso: string | null | undefined): number | undefined =>
 const iso = (epoch: number | undefined): string | null =>
   epoch ? new Date(epoch).toISOString() : null;
 
-// ---------------------------------------------------------------------------
-// Global sync/persist configuration
-// ---------------------------------------------------------------------------
 configureObservableSync({
   persist: {
     plugin: observablePersistAsyncStorage({ AsyncStorage }),
@@ -73,39 +61,24 @@ configureSyncedSupabase({
   fieldId: 'id',
   fieldCreatedAt: 'created_at',
   fieldUpdatedAt: 'updated_at',
-  // fieldDeleted omitted — deleted_at is a timestamp, not a boolean,
-  // so we handle it manually in each transform rather than letting the
-  // plugin try to manage it.
 });
 
-// ---------------------------------------------------------------------------
-// App state interface
-// ---------------------------------------------------------------------------
 interface AppState {
-  // Auth
   isAuthenticated: boolean;
   identity: Identity | null;
   userId: string | null;
 
-  // Data (populated by syncObservable below)
   vaults: Vault[];
   entries: Record<string, VaultEntry>;
   sharedEntries: SharedEntry[];
 
-  // UI selection
   activeVaultId: string | null;
   activeEntryId: string | null;
 
-  // UI status
   isLoading: boolean;
   error: string | null;
 }
 
-// ---------------------------------------------------------------------------
-// Store declaration — must come before syncObservable calls so that
-// filter/waitFor callbacks can safely reference appStore$ without a
-// "used before declaration" error.
-// ---------------------------------------------------------------------------
 export const appStore$ = observable<AppState>({
   isAuthenticated: false,
   identity: null,
@@ -122,9 +95,6 @@ export const appStore$ = observable<AppState>({
   error: null,
 });
 
-// ---------------------------------------------------------------------------
-// Derived / computed selectors
-// ---------------------------------------------------------------------------
 export const activeVault$ = observable<Vault | undefined>(
   () => appStore$.vaults.get().find(v => v.id === appStore$.activeVaultId.get()),
 );
@@ -146,11 +116,6 @@ export const activeVaultEntries$ = observable<VaultEntry[]>(
   },
 );
 
-// ---------------------------------------------------------------------------
-// Sync: vaults
-// Columns: id, user_id, name, encrypted_encryption_key, version,
-//          created_at, updated_at, deleted_at
-// ---------------------------------------------------------------------------
 syncObservable(
   appStore$.vaults,
   syncedSupabase({
@@ -161,7 +126,6 @@ syncObservable(
     initial: [],
     filter: (query) => {
       const userId = appStore$.userId.peek();
-      // cast: `as: 'array'` widens the builder type away from typed columns
       return userId ? (query as any).eq('user_id', userId) : query;
     },
     waitFor: appStore$.userId,
@@ -177,7 +141,6 @@ syncObservable(
         deletedAt:             msOpt(row.deleted_at),
       }),
       save: (vault: Vault | Vault[]): any => {
-        // Handle full array (called by doChangeRemote)
         if (Array.isArray(vault)) {
           return vault.map(v => ({
             id:                       v.id,
@@ -206,12 +169,6 @@ syncObservable(
   }),
 );
 
-// ---------------------------------------------------------------------------
-// Sync: vault_entries
-// Columns: id, vault_id, encrypted_payload, version,
-//          created_at, updated_at, deleted_at
-// Note: NO user_id column on this table — filter via vault_id instead.
-// ---------------------------------------------------------------------------
 syncObservable(
   appStore$.entries,
   syncedSupabase({
@@ -222,11 +179,9 @@ syncObservable(
     initial: {},
     filter: (query) => {
       const activeVaultId = appStore$.activeVaultId.peek();
-      // Only fetch entries for the active vault. When no vault is selected
-      // the query returns nothing, keeping the local store clean.
       return activeVaultId
         ? (query as any).eq('vault_id', activeVaultId)
-        : (query as any).eq('vault_id', 'none'); // return empty set safely
+        : (query as any).eq('vault_id', 'none');
     },
     waitFor: () => appStore$.activeVaultId.get() && appStore$.userId.get(),
     transform: {
@@ -240,12 +195,7 @@ syncObservable(
         deletedAt:        msOpt(row.deleted_at),
       }),
       save: (entry: VaultEntry | Record<string, VaultEntry>): any => {
-        // Legend-State calls save() in two contexts:
-        //   1. doChangeRemote: on the FULL observable value (Record<string, VaultEntry>)
-        //   2. transformOut:    on INDIVIDUAL items (VaultEntry)
-        // We must handle both.
         if (entry && typeof entry === 'object' && !('id' in entry)) {
-          // Full record — apply mapping to each item
           const result: Record<string, any> = {};
           for (const key of Object.keys(entry)) {
             const e = (entry as Record<string, VaultEntry>)[key];
@@ -276,12 +226,6 @@ syncObservable(
   }),
 );
 
-// ---------------------------------------------------------------------------
-// Sync: shared_entries
-// Columns: id, entry_id, owner_id, shared_with_id, encrypted_key,
-//          created_at, updated_at, deleted_at
-// Note: column is `entry_id` (not `vault_entry_id`) per the DB schema.
-// ---------------------------------------------------------------------------
 syncObservable(
   appStore$.sharedEntries,
   syncedSupabase({
@@ -335,37 +279,29 @@ syncObservable(
   }),
 );
 
-// ---------------------------------------------------------------------------
-// Sync state helpers
-// ---------------------------------------------------------------------------
 export const getSyncState = () => ({
   vaults:        syncState(appStore$.vaults),
   entries:       syncState(appStore$.entries),
   sharedEntries: syncState(appStore$.sharedEntries),
 });
 
-// ---------------------------------------------------------------------------
-// Actions
-// ---------------------------------------------------------------------------
 export const appActions = {
-  // Auth
   setAuthenticated: (auth: boolean) => appStore$.isAuthenticated.set(auth),
   setIdentity:      (identity: Identity | null) => appStore$.identity.set(identity),
   setUserId:        (id: string | null) => appStore$.userId.set(id),
-  setMasterKey:     setKeySingleton,
+  setPasswordKey:   setPwKey,
+  getPasswordKey:   getPasswordKey,
+  setMasterKey:     setPwKey,
 
-  // UI selection
   setActiveVault: (vaultId: string | null) => {
     appStore$.activeVaultId.set(vaultId);
-    appStore$.activeEntryId.set(null); // clear entry selection on vault change
+    appStore$.activeEntryId.set(null);
   },
   setActiveEntry: (entryId: string | null) => appStore$.activeEntryId.set(entryId),
 
-  // Status
   setLoading: (loading: boolean) => appStore$.isLoading.set(loading),
   setError:   (error: string | null) => appStore$.error.set(error),
 
-  // Vault CRUD helpers
   addVault: (vault: Omit<Vault, 'createdAt' | 'updatedAt'>) => {
     const now = Date.now();
     appStore$.vaults.push({ ...vault, createdAt: now, updatedAt: now });
@@ -379,7 +315,6 @@ export const appActions = {
     if (idx !== -1) appStore$.vaults[idx].deletedAt.set(Date.now());
   },
 
-  // Entry CRUD helpers
   addEntry: (entry: Omit<VaultEntry, 'createdAt' | 'updatedAt'>) => {
     const now = Date.now();
     appStore$.entries[entry.id].set({ ...entry, createdAt: now, updatedAt: now });
@@ -391,13 +326,10 @@ export const appActions = {
     appStore$.entries[id].deletedAt.set(Date.now());
   },
 
-  // Session teardown — lock keeps identity, reset wipes everything
   lock: () => {
-    destroyKeySingleton();
+    destroyAllKeys();
     const identity = appStore$.identity.get();
 
-    // Clear persisted data — do NOT set([]) / set({}) on synced observables,
-    // that queues deletions and would wipe Supabase on next sync.
     syncState(appStore$.vaults).clearPersist();
     syncState(appStore$.entries).clearPersist();
     syncState(appStore$.sharedEntries).clearPersist();
@@ -408,15 +340,14 @@ export const appActions = {
       activeEntryId:   null,
       isLoading:       false,
       error:           null,
-      identity,        // preserve identity so login screen can pre-fill email
+      identity,
     });
 
-    // userId last — waitFor gates syncing on this, so nulling it suspends all sync cleanly
     appStore$.userId.set(null);
   },
 
   reset: () => {
-    destroyKeySingleton();
+    destroyAllKeys();
 
     syncState(appStore$.vaults).clearPersist();
     syncState(appStore$.entries).clearPersist();

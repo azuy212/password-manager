@@ -123,6 +123,9 @@ export type Database = {
         Row: {
           created_at: string | null
           email: string
+          encrypted_vek_password: string | null
+          encrypted_vek_recovery: string | null
+          crypto_version: number
           id: string
           public_key: string
           salt: string
@@ -132,6 +135,9 @@ export type Database = {
         Insert: {
           created_at?: string | null
           email: string
+          encrypted_vek_password?: string | null
+          encrypted_vek_recovery?: string | null
+          crypto_version?: number
           id?: string
           public_key: string
           salt: string
@@ -141,6 +147,9 @@ export type Database = {
         Update: {
           created_at?: string | null
           email?: string
+          encrypted_vek_password?: string | null
+          encrypted_vek_recovery?: string | null
+          crypto_version?: number
           id?: string
           public_key?: string
           salt?: string

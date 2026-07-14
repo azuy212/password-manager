@@ -19,8 +19,11 @@ function AutoLockGuard() {
   const pathname = usePathname();
 
   useAutoLock(() => {
-    // Only navigate away if not already on the unlock screen
-    if (pathname !== '/' && pathname !== '/setup') {
+    if (
+      pathname !== '/' &&
+      pathname !== '/setup' &&
+      pathname !== '/forgot-password'
+    ) {
       router.replace('/');
     }
   });
@@ -53,6 +56,7 @@ export default function RootLayout() {
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="index" />
             <Stack.Screen name="setup" />
+            <Stack.Screen name="forgot-password" />
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             <Stack.Screen name="vault" />
             <Stack.Screen name="entry" options={{ presentation: 'modal' }} />

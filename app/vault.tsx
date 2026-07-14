@@ -20,8 +20,7 @@ import { VaultSplitView } from '../components/VaultSplitView';
 import { WebLayout } from '../components/WebLayout';
 import type { ThemeColors } from '../constants/Colors';
 import { useCsvImport } from '../hooks/useCsvImport';
-import { getMasterKey } from '../core/masterKeyStore';
-import { decryptVaultKey, getEntriesForVault } from '../core/vault/vaultService';
+import { decryptVaultKey, getEntriesForVault, decryptVEKForOperation } from '../core/vault/vaultService';
 import { useIsDesktop } from '../hooks/useBreakpoint';
 import { useEntrySearch } from '../hooks/useEntrySearch';
 import { useTheme } from '../hooks/useTheme';
@@ -52,16 +51,17 @@ export default function VaultScreen() {
   const isDesktop = useIsDesktop();
 
   const loadEntries = useCallback(async () => {
-    const currentMasterKey = getMasterKey();
-    if (!params.vaultId || !currentMasterKey || !vaults) return;
+    const vek = await decryptVEKForOperation();
+    if (!params.vaultId || !vek || !vaults) return;
     const vault = vaults.find(v => v.id === params.vaultId);
-    if (!vault) return;
+    if (!vault) { vek.destroy(); return; }
 
     let vaultKey;
     try {
-      vaultKey = await decryptVaultKey(vault.encryptedEncryptionKey, currentMasterKey);
+      vaultKey = await decryptVaultKey(vault.encryptedEncryptionKey, vek);
     } catch {
       Alert.alert('Error', 'Failed to decrypt vault key');
+      vek.destroy();
       return;
     }
 
@@ -74,6 +74,7 @@ export default function VaultScreen() {
     } finally {
       setIsLoading(false);
       vaultKey.destroy();
+      vek.destroy();
     }
   }, [params.vaultId, vaults]);
 

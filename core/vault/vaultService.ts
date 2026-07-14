@@ -2,6 +2,7 @@ import { appStore$ } from '../../store/appStore';
 import { uuidv4 } from '@/utils/uuid';
 import type { Vault, VaultEntry, VaultEntryInput, VaultInput } from '../../types/vault';
 import { encryptString, decryptString, encryptBytes, decryptBytes, SecureKey, generateRandomBytes } from '../crypto';
+import { decryptVEK, getCachedEncryptedVEK, getPasswordKey } from '../keyStore';
 
 /** Raw encrypted entry as stored in store */
 export interface VaultEntryRaw {
@@ -15,14 +16,31 @@ export interface VaultEntryRaw {
 }
 
 /**
- * Decrypt the vault's data encryption key (DEK) using the master key.
+ * Decrypt the vault's DEK using VEK.
  */
 export async function decryptVaultKey(
   encryptedEncryptionKey: string,
-  masterKey: SecureKey
+  vek: SecureKey
 ): Promise<SecureKey> {
-  const dekBytes = await decryptBytes(encryptedEncryptionKey, masterKey);
+  const dekBytes = await decryptBytes(encryptedEncryptionKey, vek);
   return new SecureKey(dekBytes);
+}
+
+/**
+ * Derive VEK from cached PasswordKey + encryptedVEKPassword.
+ * Used internally by vault operations.
+ * Caller MUST destroy the returned VEK after use.
+ */
+export async function decryptVEKForOperation(): Promise<SecureKey | null> {
+  const passwordKey = getPasswordKey();
+  const encryptedVEK = getCachedEncryptedVEK();
+  if (!passwordKey || !encryptedVEK) return null;
+  try {
+    const vekBytes = await decryptBytes(encryptedVEK, passwordKey);
+    return new SecureKey(vekBytes);
+  } catch {
+    return null;
+  }
 }
 
 async function encryptEntryContent(
@@ -42,9 +60,6 @@ async function encryptEntryContent(
   return encryptString(JSON.stringify(content), key);
 }
 
-/**
- * Decrypt the entire entry content from one JSON payload
- */
 async function decryptEntryContent(
   encryptedPayload: string,
   key: SecureKey
@@ -67,7 +82,7 @@ async function decryptEntryContent(
 }
 
 /**
- * Get all vaults (metadata only — not encrypted)
+ * Get all vaults (metadata only).
  */
 export async function getVaults(): Promise<Vault[]> {
   return appStore$.vaults.get();
@@ -75,11 +90,11 @@ export async function getVaults(): Promise<Vault[]> {
 
 /**
  * Create a new vault.
+ * Uses VEK to encrypt the vault's DEK.
  */
-export async function createVault(input: VaultInput, masterKey: SecureKey): Promise<Vault> {
-  // Generate a unique data encryption key for this vault, then encrypt it with the master key
+export async function createVault(input: VaultInput, vek: SecureKey): Promise<Vault> {
   const vaultKeyBytes = await generateRandomBytes(32);
-  const encryptedEncryptionKey = await encryptBytes(vaultKeyBytes, masterKey);
+  const encryptedEncryptionKey = await encryptBytes(vaultKeyBytes, vek);
 
   const newVault: Vault = {
     id: uuidv4(),
@@ -102,14 +117,12 @@ export async function createVault(input: VaultInput, masterKey: SecureKey): Prom
 export async function deleteVault(vaultId: string): Promise<void> {
   const now = Date.now();
 
-  // Soft-delete the vault
   const vault$ = appStore$.vaults.find(v => v.id.get() === vaultId);
   if (vault$) {
     vault$.deletedAt.set(now);
     vault$.updatedAt.set(now);
   }
 
-  // Soft-delete all entries in the vault
   const entries = appStore$.entries.get();
   Object.keys(entries).forEach(id => {
     if (entries[id].vaultId === vaultId) {
@@ -130,7 +143,6 @@ export async function getEntriesForVault(vaultId: string, vaultKey: SecureKey): 
 
   if (!vaultKey) return [];
 
-  // Decrypt each entry
   const result: VaultEntry[] = [];
   for (const entry of vaultEntries) {
     try {
@@ -159,7 +171,7 @@ export async function getAllRawEntriesForVault(vaultId: string): Promise<VaultEn
 }
 
 /**
- * Create a new vault entry
+ * Create a new vault entry.
  */
 export async function createEntry(input: VaultEntryInput, vaultKey: SecureKey): Promise<VaultEntry> {
   const now = Date.now();
@@ -177,7 +189,6 @@ export async function createEntry(input: VaultEntryInput, vaultKey: SecureKey): 
 
   appStore$.entries[id].set(newEntry);
 
-  // Return the decrypted entry
   const decrypted = await decryptEntryContent(encryptedPayload, vaultKey);
   decrypted.id = newEntry.id;
   decrypted.vaultId = newEntry.vaultId;
@@ -190,7 +201,7 @@ export async function createEntry(input: VaultEntryInput, vaultKey: SecureKey): 
 }
 
 /**
- * Update a vault entry
+ * Update a vault entry.
  */
 export async function updateEntry(
   entryId: string,
@@ -201,10 +212,8 @@ export async function updateEntry(
   const existing = entry$.get();
   if (!existing) return null;
 
-  // First decrypt existing entry to get current values
   const current = await decryptEntryContent(existing.encryptedPayload, vaultKey);
 
-  // Merge updates
   const updatedInput: VaultEntryInput = {
     vaultId: existing.vaultId,
     title: updates.title ?? current.title,
@@ -214,7 +223,6 @@ export async function updateEntry(
     notes: updates.notes ?? current.notes,
   };
 
-  // Re-encrypt everything as one payload
   const encryptedPayload = await encryptEntryContent(updatedInput, vaultKey);
 
   entry$.assign({
@@ -222,7 +230,6 @@ export async function updateEntry(
     updatedAt: Date.now(),
   });
 
-  // Return the decrypted entry
   const decrypted = await decryptEntryContent(encryptedPayload, vaultKey);
   decrypted.id = entryId;
   decrypted.vaultId = existing.vaultId;
@@ -235,7 +242,7 @@ export async function updateEntry(
 }
 
 /**
- * Soft-delete a vault entry
+ * Soft-delete a vault entry.
  */
 export async function deleteEntry(entryId: string): Promise<void> {
   const entry$ = appStore$.entries[entryId];
@@ -248,27 +255,21 @@ export async function deleteEntry(entryId: string): Promise<void> {
 }
 
 /**
- * Re-encrypt all vault DEKs with a new master key.
- * Used during password rotation.
+ * Update a vault's encrypted DEK in the store.
+ * Used during v1→v2 migration to swap PasswordKey-wrapped DEK for VEK-wrapped DEK.
  */
-export async function reEncryptVaultKeys(
-  oldMasterKey: SecureKey,
-  newMasterKey: SecureKey,
+export async function updateVaultEncryptedKey(
+  vaultId: string,
+  newEncryptedKey: string,
 ): Promise<void> {
-  const vaults = appStore$.vaults.get();
-  for (const vault of vaults) {
-    const vaultKey = await decryptVaultKey(vault.encryptedEncryptionKey, oldMasterKey);
-    const newEncryptedKey = await encryptBytes(vaultKey.toArray(), newMasterKey);
-    vaultKey.destroy();
-    const idx = appStore$.vaults.get().findIndex(v => v.id === vault.id);
-    if (idx !== -1) {
-      appStore$.vaults[idx].encryptedEncryptionKey.set(newEncryptedKey);
-    }
+  const idx = appStore$.vaults.get().findIndex(v => v.id === vaultId);
+  if (idx !== -1) {
+    appStore$.vaults[idx].encryptedEncryptionKey.set(newEncryptedKey);
   }
 }
 
 /**
- * Get a single entry by ID (decrypted)
+ * Get a single entry by ID (decrypted).
  */
 export async function getEntry(entryId: string, vaultKey: SecureKey): Promise<VaultEntry | null> {
   const entry = appStore$.entries[entryId].get();

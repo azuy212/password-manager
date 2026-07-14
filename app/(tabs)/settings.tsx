@@ -1,21 +1,21 @@
 import { LoadingOverlay } from '@/components/LoadingOverlay';
 import { SyncStatusIndicator } from '@/components/SyncStatusIndicator';
 import { WebLayout } from '@/components/WebLayout';
-import { changePassword, clearIdentity } from '@/core/auth/identityService';
-import { getMasterKey } from '@/core/masterKeyStore';
-import { reEncryptVaultKeys } from '@/core/vault/vaultService';
+import { changePassword, clearIdentity, regenerateRecoveryKey } from '@/core/auth/identityService';
+import { isBiometricUnlockEnabled, setupBiometricUnlock, disableBiometricUnlock } from '@/core/auth/biometricService';
+import { getPasswordKey, getCachedEncryptedVEK, decryptVEK } from '@/core/keyStore';
 import { useTheme } from '@/hooks/useTheme';
 import { appActions, getSyncState } from '@/store/appStore';
 import { radius, spacing, typography } from '@/utils/themedStyles';
 import { Ionicons } from '@expo/vector-icons';
 import { useValue } from '@legendapp/state/react';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useCallback, useMemo, useState, useEffect } from 'react';
+import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, Text, TextInput, View, Platform } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Clipboard from 'expo-clipboard';
 
-// Shared styles for SettingItem (static, no dependencies on insets)
 const itemStyles = StyleSheet.create({
   settingItem: {
     flexDirection: 'row',
@@ -35,6 +35,10 @@ const itemStyles = StyleSheet.create({
   settingText: {
     flex: 1,
     fontSize: 16,
+  },
+  settingDetail: {
+    fontSize: 13,
+    marginRight: spacing.sm,
   },
 });
 
@@ -72,7 +76,6 @@ function SettingItem({ icon, label, onPress, danger, colors }: SettingItemProps)
 export default function SettingsScreen() {
   const router = useRouter();
 
-  // Sync state from Legend-State
   const syncs = getSyncState();
   const vaultsSync = useValue(syncs.vaults);
   const entriesSync = useValue(syncs.entries);
@@ -90,6 +93,23 @@ export default function SettingsScreen() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isChangingPassword, setIsChangingPassword] = useState(false);
+
+  // Recovery key state
+  const [showRecoveryKey, setShowRecoveryKey] = useState(false);
+  const [recoveryKeyValue, setRecoveryKeyValue] = useState<string | null>(null);
+  const [isLoadingRecoveryKey, setIsLoadingRecoveryKey] = useState(false);
+  const [showRegenerateConfirm, setShowRegenerateConfirm] = useState(false);
+  const [isRegenerating, setIsRegenerating] = useState(false);
+  const [showNewRecoveryKey, setShowNewRecoveryKey] = useState(false);
+  const [newRecoveryKeyValue, setNewRecoveryKeyValue] = useState<string | null>(null);
+  const [newRecoveryConfirmed, setNewRecoveryConfirmed] = useState(false);
+
+  // Biometric state
+  const [isBiometricOn, setIsBiometricOn] = useState(false);
+
+  useEffect(() => {
+    isBiometricUnlockEnabled().then(setIsBiometricOn);
+  }, []);
 
   const handleSync = useCallback(async () => {
     await Promise.all([
@@ -123,8 +143,8 @@ export default function SettingsScreen() {
   }, [router]);
 
   const handleChangePassword = useCallback(async () => {
-    const currentKey = getMasterKey();
-    if (!currentKey) {
+    const passwordKey = getPasswordKey();
+    if (!passwordKey) {
       Alert.alert('Error', 'Not authenticated');
       return;
     }
@@ -146,15 +166,20 @@ export default function SettingsScreen() {
 
     setIsChangingPassword(true);
     try {
-      const newKey = await changePassword(oldPassword, newPassword, currentKey);
+      const encryptedVEK = getCachedEncryptedVEK();
+      if (!encryptedVEK) {
+        Alert.alert('Error', 'Session expired. Please unlock again.');
+        return;
+      }
+
+      const newKey = await changePassword(oldPassword, newPassword, encryptedVEK);
       if (!newKey) {
         Alert.alert('Error', 'Failed to change password. Check your old password is correct.');
         return;
       }
 
-      await reEncryptVaultKeys(currentKey, newKey);
-      currentKey.destroy();
-      appActions.setMasterKey(newKey);
+      passwordKey.destroy();
+      appActions.setPasswordKey(newKey);
 
       setShowChangePassword(false);
       setOldPassword('');
@@ -175,6 +200,141 @@ export default function SettingsScreen() {
     setConfirmPassword('');
     setShowChangePassword(true);
   }, []);
+
+  // Recovery key handlers
+  const handleViewRecoveryKey = useCallback(async () => {
+    const encryptedVEK = getCachedEncryptedVEK();
+    if (!encryptedVEK) {
+      Alert.alert('Error', 'Please unlock the app first');
+      return;
+    }
+    setIsLoadingRecoveryKey(true);
+    try {
+      const vek = await decryptVEK();
+      if (!vek) {
+        Alert.alert('Error', 'Failed to decrypt vault');
+        return;
+      }
+
+      // Decrypt encryptedVEKRecovery from cloud
+      const { supabase } = await import('../../services/supabaseClient');
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session?.user?.id) {
+        Alert.alert('Error', 'Not authenticated');
+        vek.destroy();
+        return;
+      }
+
+      const { data: userData } = await supabase
+        .from('users')
+        .select('encrypted_vek_recovery')
+        .eq('id', sessionData.session.user.id)
+        .single();
+
+      if (!userData?.encrypted_vek_recovery) {
+        Alert.alert('Error', 'No recovery key set up');
+        vek.destroy();
+        return;
+      }
+
+      // We need to write the VEK bytes to the recovery key encrypted blob to get the key out
+      // Actually, the recovery key is what we show. We don't have it - it's encrypted in the cloud
+      // To get it back, we'd need to rotate it. Let's just show a different approach:
+      // The recovery key is stored encrypted in the cloud. We show it only at creation/regeneration.
+      Alert.alert(
+        'Recovery Key',
+        'For security, the Recovery Key is only shown when created or regenerated.\n\nYou can regenerate it to get a new key.',
+        [{ text: 'OK' }]
+      );
+      vek.destroy();
+    } catch {
+      Alert.alert('Error', 'Failed to retrieve recovery key');
+    } finally {
+      setIsLoadingRecoveryKey(false);
+    }
+  }, []);
+
+  const handleRegenerateRecoveryKey = useCallback(async () => {
+    const encryptedVEK = getCachedEncryptedVEK();
+    if (!encryptedVEK) {
+      Alert.alert('Error', 'Please unlock the app first');
+      return;
+    }
+
+    setIsRegenerating(true);
+    try {
+      const newKey = await regenerateRecoveryKey(encryptedVEK);
+      if (!newKey) {
+        Alert.alert('Error', 'Failed to regenerate recovery key');
+        return;
+      }
+      setNewRecoveryKeyValue(newKey);
+      setNewRecoveryConfirmed(false);
+      setShowNewRecoveryKey(true);
+      setShowRegenerateConfirm(false);
+    } catch {
+      Alert.alert('Error', 'Failed to regenerate recovery key');
+    } finally {
+      setIsRegenerating(false);
+    }
+  }, []);
+
+  const handleCopyNewKey = useCallback(async () => {
+    if (newRecoveryKeyValue) {
+      await Clipboard.setStringAsync(newRecoveryKeyValue);
+      Alert.alert('Copied', 'New Recovery Key copied to clipboard');
+    }
+  }, [newRecoveryKeyValue]);
+
+  const handleNewKeyConfirmed = useCallback(() => {
+    setShowNewRecoveryKey(false);
+    setNewRecoveryKeyValue(null);
+    Alert.alert('Success', 'Recovery Key regenerated. The old key is no longer valid.');
+  }, []);
+
+  // Biometric handlers
+  const handleToggleBiometric = useCallback(async () => {
+    if (isBiometricOn) {
+      Alert.alert(
+        'Disable Biometric Unlock',
+        'Face ID / Touch ID will no longer unlock your vault.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Disable',
+            style: 'destructive',
+            onPress: async () => {
+              await disableBiometricUnlock();
+              setIsBiometricOn(false);
+            },
+          },
+        ]
+      );
+    } else {
+      const encryptedVEK = getCachedEncryptedVEK();
+      if (!encryptedVEK) {
+        Alert.alert('Error', 'Please unlock the app first');
+        return;
+      }
+      try {
+        const vek = await decryptVEK();
+        if (!vek) {
+          Alert.alert('Error', 'Failed to decrypt vault');
+          return;
+        }
+        const success = await setupBiometricUnlock(vek);
+        vek.destroy();
+        if (success) {
+          setIsBiometricOn(true);
+          Alert.alert('Success', 'Biometric unlock enabled');
+        } else {
+          Alert.alert('Error', 'Failed to set up biometric unlock');
+        }
+      } catch {
+        Alert.alert('Error', 'Failed to set up biometric unlock');
+      }
+    }
+  }, [isBiometricOn]);
 
   const styles = useMemo(() => StyleSheet.create({
     container: {
@@ -262,6 +422,9 @@ export default function SettingsScreen() {
     modalButtonSave: {
       backgroundColor: colors.primary,
     },
+    modalButtonDanger: {
+      backgroundColor: colors.danger,
+    },
     modalButtonTextCancel: {
       color: colors.textSecondary,
       fontWeight: '600',
@@ -272,6 +435,52 @@ export default function SettingsScreen() {
       fontWeight: '600',
       fontSize: 16,
     },
+    recoveryBox: {
+      backgroundColor: colors.inputBackground,
+      borderWidth: 1,
+      borderColor: colors.accent,
+      borderRadius: radius.md,
+      padding: spacing.lg,
+      marginBottom: spacing.lg,
+      alignItems: 'center',
+    },
+    recoveryText: {
+      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+      fontSize: 16,
+      color: colors.text,
+      letterSpacing: 1.5,
+      textAlign: 'center',
+    },
+    copyButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.primary,
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.lg,
+      borderRadius: radius.md,
+      marginBottom: spacing.lg,
+      gap: spacing.xs,
+    },
+    checkboxRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: spacing.lg,
+      gap: spacing.md,
+    },
+    checkbox: {
+      width: 24,
+      height: 24,
+      borderRadius: radius.sm,
+      borderWidth: 2,
+      borderColor: colors.border,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    checkboxChecked: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
   }), [colors, insets]);
 
   return (
@@ -279,7 +488,6 @@ export default function SettingsScreen() {
       <View style={styles.container}>
       <LoadingOverlay visible={isResetting} message="Resetting vault..." />
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Header */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.lg, paddingHorizontal: spacing.sm }}>
           <Text style={[styles.headerTitle, { marginBottom: 0 }]}>Settings</Text>
           <SyncStatusIndicator
@@ -299,6 +507,39 @@ export default function SettingsScreen() {
             onPress={handleOpenChangePassword}
             colors={colors}
           />
+          <SettingItem
+            icon="key"
+            label="View Recovery Key"
+            onPress={handleViewRecoveryKey}
+            colors={colors}
+          />
+          <SettingItem
+            icon="refresh"
+            label="Regenerate Recovery Key"
+            onPress={() => setShowRegenerateConfirm(true)}
+            colors={colors}
+          />
+        </View>
+
+        {/* Biometric Section */}
+        <Text style={styles.sectionHeader}>Biometric Unlock</Text>
+        <View style={styles.section}>
+          <Pressable
+            style={[itemStyles.settingItem, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            onPress={handleToggleBiometric}
+            accessibilityRole="button"
+            accessibilityLabel="Toggle biometric unlock"
+          >
+            <View style={[itemStyles.iconContainer, { backgroundColor: colors.primaryMuted }]}>
+              <Ionicons name="finger-print" size={20} color={colors.primary} />
+            </View>
+            <Text style={[itemStyles.settingText, { color: colors.text }]}>
+              {isBiometricOn ? (Platform.OS === 'ios' ? 'Face ID / Touch ID' : 'Biometric Unlock') : 'Enable Biometric Unlock'}
+            </Text>
+            <Text style={[itemStyles.settingDetail, { color: isBiometricOn ? colors.accent : colors.textTertiary }]}>
+              {isBiometricOn ? 'On' : 'Off'}
+            </Text>
+          </Pressable>
         </View>
 
         {/* Danger Zone */}
@@ -320,7 +561,7 @@ export default function SettingsScreen() {
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Change Master Password</Text>
             <Text style={styles.modalSubtitle}>
-              All vault keys will be re-encrypted with your new password
+              Your vault data will not be affected.
             </Text>
 
             <TextInput
@@ -374,6 +615,88 @@ export default function SettingsScreen() {
                 )}
               </Pressable>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Regenerate Recovery Key Confirm Modal */}
+      <Modal visible={showRegenerateConfirm} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Regenerate Recovery Key</Text>
+            <Text style={styles.modalSubtitle}>
+              This will permanently invalidate your current Recovery Key.
+            </Text>
+
+            <View style={styles.modalButtons}>
+              <Pressable
+                style={styles.modalButtonCancel}
+                onPress={() => setShowRegenerateConfirm(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel"
+              >
+                <Text style={styles.modalButtonTextCancel}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modalButton, styles.modalButtonDanger]}
+                onPress={handleRegenerateRecoveryKey}
+                disabled={isRegenerating}
+                accessibilityRole="button"
+                accessibilityLabel="Confirm regenerate"
+              >
+                {isRegenerating ? (
+                  <ActivityIndicator size="small" color={colors.textInverse} />
+                ) : (
+                  <Text style={styles.modalButtonTextSave}>Regenerate</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* New Recovery Key Display Modal */}
+      <Modal visible={showNewRecoveryKey} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { maxWidth: 440 }]}>
+            <Text style={styles.modalTitle}>New Recovery Key</Text>
+            <Text style={styles.modalSubtitle}>
+              Save this key. It can reset your master password if forgotten.
+            </Text>
+
+            <View style={styles.recoveryBox}>
+              <Text style={styles.recoveryText} selectable>{newRecoveryKeyValue}</Text>
+            </View>
+
+            <Pressable
+              style={styles.copyButton}
+              onPress={handleCopyNewKey}
+              accessibilityRole="button"
+              accessibilityLabel="Copy recovery key"
+            >
+              <Ionicons name="copy-outline" size={18} color={colors.textInverse} />
+              <Text style={{ color: colors.textInverse, fontWeight: '600' }}>Copy</Text>
+            </Pressable>
+
+            <Pressable
+              style={styles.checkboxRow}
+              onPress={() => setNewRecoveryConfirmed(!newRecoveryConfirmed)}
+            >
+              <View style={[styles.checkbox, newRecoveryConfirmed && styles.checkboxChecked]}>
+                {newRecoveryConfirmed && <Ionicons name="checkmark" size={16} color={colors.textInverse} />}
+              </View>
+              <Text style={{ color: colors.text, flex: 1 }}>I have saved my new Recovery Key</Text>
+            </Pressable>
+
+            <Pressable
+              style={[styles.modalButtonSave, !newRecoveryConfirmed && { opacity: 0.4 }, { padding: spacing.md, borderRadius: radius.md, alignItems: 'center' }]}
+              onPress={handleNewKeyConfirmed}
+              disabled={!newRecoveryConfirmed}
+              accessibilityRole="button"
+              accessibilityLabel="Confirm saved"
+            >
+              <Text style={styles.modalButtonTextSave}>Done</Text>
+            </Pressable>
           </View>
         </View>
       </Modal>

@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { uuidv4 } from '@/utils/uuid';
 
 import CryptoNative from 'crypto-native';
-import { deriveMasterKey, encryptBytes, decryptBytes, SecureKey } from '@/core/crypto';
+import { deriveMasterKey, encryptBytes, decryptBytes, generateRandomBytes, SecureKey, generateRecoveryKey, encryptVEKWithRecoveryKey, decryptVEKWithRecoveryKey } from '@/core/crypto';
 import { generateX25519KeyPair } from '@/core/crypto/x25519';
 import type { Identity } from '@/types/identity';
 import { supabaseSignUp, supabaseSignIn, supabaseSignOut } from './supabaseAuthService';
@@ -12,37 +12,67 @@ import { supabase } from '../../services/supabaseClient';
 const IDENTITY_KEY = 'identity';
 const MAX_UNLOCK_ATTEMPTS = 10;
 const ATTEMPT_COUNT_KEY = 'unlock_attempts';
-const LOCKOUT_DURATION_MS = 5 * 60 * 1000; // 5 minutes
+const LOCKOUT_DURATION_MS = 5 * 60 * 1000;
 
-// Keys used by vault service — must be wiped on reset
 const VAULTS_KEY = 'vaults';
 const ENTRIES_KEY = 'vault_entries';
 
+// ────────────────────────────────────────────────────────────────────────────
+// Types
+// ────────────────────────────────────────────────────────────────────────────
+
+export interface UnlockResult {
+  passwordKey: SecureKey;
+  encryptedVEKPassword: string;
+}
+
+export interface CreateIdentityResult {
+  identity: Identity;
+  passwordKey: SecureKey;
+  supabaseUserId: string;
+}
+
+export interface MigrationResult {
+  recoveryKey: string;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Create Identity (v2 — VEK-based)
+// ────────────────────────────────────────────────────────────────────────────
+
 /**
- * Create a new identity with Ed25519 + X25519 keypairs and register with Supabase Auth.
- * Returns the identity, masterKey, and the Supabase userId.
+ * Create a new identity with VEK + RecoveryKey.
+ * Private keys are encrypted with VEK (not PasswordKey).
+ * Returns { identity, passwordKey, supabaseUserId }.
+ * Recovery key is handled via a short-lived local variable in the caller.
  */
 export async function createIdentity(
   email: string,
   password: string
-): Promise<{ identity: Identity; masterKey: SecureKey; supabaseUserId: string } | { error: string }> {
+): Promise<CreateIdentityResult & { recoveryKey: string } | { error: string }> {
   const id = uuidv4();
 
-  // Generate Ed25519 keypair
+  // Generate keypairs
   const { privateKey, publicKey } = await CryptoNative.generateKeyPair();
+  const { privateKey: x25519PrivateKey, publicKey: x25519PublicKey } = generateX25519KeyPair();
 
-  // Generate X25519 keypair for ECDH sharing
-  const { privateKey: x25519PrivateKey, publicKey: x25519PublicKey } =
-    generateX25519KeyPair();
+  // Derive PasswordKey
+  const { key: passwordKey, salt } = await deriveMasterKey(password);
 
-  // Derive a key from password to encrypt the private keys
-  const { key: encryptionKey, salt } = await deriveMasterKey(password);
+  // Generate VEK (root secret)
+  const vekBytes = await generateRandomBytes(32);
+  const vek = new SecureKey(vekBytes);
 
-  // Encrypt the Ed25519 private key
-  const encryptedPrivateKey = await encryptBytes(privateKey, encryptionKey);
+  // Encrypt private keys with VEK
+  const encryptedPrivateKey = await encryptBytes(privateKey, vek);
+  const encryptedX25519PrivateKey = await encryptBytes(x25519PrivateKey, vek);
 
-  // Encrypt the X25519 private key
-  const encryptedX25519PrivateKey = await encryptBytes(x25519PrivateKey, encryptionKey);
+  // Encrypt VEK with PasswordKey
+  const encryptedVEKPassword = await encryptBytes(vekBytes, passwordKey);
+
+  // Generate RecoveryKey and encrypt VEK
+  const { bytes: recoveryBytes, formatted: recoveryKeyFormatted } = await generateRecoveryKey();
+  const encryptedVEKRecovery = await encryptVEKWithRecoveryKey(vekBytes, recoveryBytes);
 
   const identity: Identity = {
     id,
@@ -51,46 +81,69 @@ export async function createIdentity(
     salt,
     x25519PublicKey: Array.from(x25519PublicKey),
     encryptedX25519PrivateKey,
+    cryptoVersion: 2,
   };
 
   // Store identity locally
   await secureStorage.setItem(IDENTITY_KEY, JSON.stringify(identity));
-  await secureStorage.deleteItem(ATTEMPT_COUNT_KEY); // Reset attempts
+  await secureStorage.deleteItem(ATTEMPT_COUNT_KEY);
 
-  // Sign up with Supabase Auth and create the users row
-  const authResult = await supabaseSignUp(email, password, publicKey, salt, Array.from(x25519PublicKey));
+  // Sign up with Supabase and create users row
+  const authResult = await supabaseSignUp(
+    email,
+    password,
+    publicKey,
+    salt,
+    Array.from(x25519PublicKey),
+    encryptedVEKPassword,
+    encryptedVEKRecovery,
+  );
   if (!authResult.success) {
-    // Rollback: clear local identity since Supabase signup failed
     await secureStorage.deleteItem(IDENTITY_KEY);
+    vek.destroy();
+    passwordKey.destroy();
     return { error: authResult.error || 'Failed to create Supabase account' };
   }
 
-  return { identity, masterKey: encryptionKey, supabaseUserId: authResult.userId! };
+  vek.destroy();
+
+  return {
+    identity,
+    passwordKey,
+    supabaseUserId: authResult.userId!,
+    recoveryKey: recoveryKeyFormatted,
+  };
 }
 
-/**
- * Bootstrap a second device: derive master key from cloud-fetched salt,
- * then create a local identity so future unlocks work offline.
- */
+// ────────────────────────────────────────────────────────────────────────────
+// Bootstrap second device
+// ────────────────────────────────────────────────────────────────────────────
+
 export async function bootstrapIdentityFromCloud(
   password: string,
   salt: number[],
   publicKey: number[],
-  supabaseUserId: string
-): Promise<{ identity: Identity; masterKey: SecureKey } | { error: string }> {
-  // Generate a NEW Ed25519 keypair for this device
+  supabaseUserId: string,
+  encryptedVEKPassword: string,
+): Promise<{ identity: Identity; passwordKey: SecureKey } | { error: string }> {
   const { privateKey } = await CryptoNative.generateKeyPair();
+  const { privateKey: x25519PrivateKey, publicKey: x25519PublicKey } = generateX25519KeyPair();
 
-  // Generate a NEW X25519 keypair for ECDH sharing
-  const { privateKey: x25519PrivateKey, publicKey: x25519PublicKey } =
-    generateX25519KeyPair();
+  const { key: passwordKey } = await deriveMasterKey(password, salt);
 
-  // Derive master key from cloud salt
-  const { key: encryptionKey } = await deriveMasterKey(password, salt);
+  // Decrypt VEK from cloud
+  let vek: SecureKey;
+  try {
+    const vekBytes = await decryptBytes(encryptedVEKPassword, passwordKey);
+    vek = new SecureKey(vekBytes);
+  } catch {
+    passwordKey.destroy();
+    return { error: 'Failed to decrypt vault. Invalid password or corrupted data.' };
+  }
 
-  // Encrypt this device's private keys
-  const encryptedPrivateKey = await encryptBytes(privateKey, encryptionKey);
-  const encryptedX25519PrivateKey = await encryptBytes(x25519PrivateKey, encryptionKey);
+  // Encrypt device-specific private keys with VEK
+  const encryptedPrivateKey = await encryptBytes(privateKey, vek);
+  const encryptedX25519PrivateKey = await encryptBytes(x25519PrivateKey, vek);
 
   const identity: Identity = {
     id: supabaseUserId,
@@ -99,167 +152,445 @@ export async function bootstrapIdentityFromCloud(
     salt,
     x25519PublicKey: Array.from(x25519PublicKey),
     encryptedX25519PrivateKey,
+    cryptoVersion: 2,
   };
 
-  // Store locally so future unlocks work
   await secureStorage.setItem(IDENTITY_KEY, JSON.stringify(identity));
   await secureStorage.deleteItem(ATTEMPT_COUNT_KEY);
 
-  return { identity, masterKey: encryptionKey };
+  vek.destroy();
+
+  return { identity, passwordKey };
 }
 
-/**
- * Get stored identity
- */
+// ────────────────────────────────────────────────────────────────────────────
+// Lock / Unlock
+// ────────────────────────────────────────────────────────────────────────────
+
 export async function getIdentity(): Promise<Identity | null> {
   const stored = await secureStorage.getItem(IDENTITY_KEY);
   if (!stored) return null;
   return JSON.parse(stored);
 }
 
-/**
- * Unlock identity by deriving master key.
- * Does NOT handle Supabase session — that must be established by the caller first.
- * Returns null if password is wrong or account is locked out.
- * Returns { error: string } if data is corrupted or tampered.
- */
-export async function unlockIdentity(password: string): Promise<SecureKey | null | { error: string }> {
-  console.log('[identityService] unlockIdentity called');
-  const identity = await getIdentity();
-  if (!identity) {
-    console.log('[identityService] No identity found');
-    return null;
-  }
-
-  // Check lockout
-  const isLockedOut = await checkLockout();
-  if (isLockedOut) {
-    console.log('[identityService] Account is locked out');
-    return { error: 'Account is temporarily locked. Please try again later.' };
-  }
-
-  try {
-    console.log('[identityService] Deriving master key from password + stored salt...');
-    // Derive key with stored salt
-    const { key } = await deriveMasterKey(password, identity.salt);
-    console.log('[identityService] Master key derived, attempting to decrypt private key...');
-
-    // Try to decrypt private key to verify password
-    const decrypted = await decryptBytes(identity.encryptedPrivateKey, key);
-    console.log('[identityService] Decryption result valid:', decrypted !== null);
-
-    if (decrypted) {
-      // Success — reset attempt count
-      console.log('[identityService] Password verified, resetting attempts');
-      await secureStorage.deleteItem(ATTEMPT_COUNT_KEY);
-      return key;
-    }
-
-    // Decryption produced something but it wasn't valid — wrong password
-    console.log('[identityService] Decryption invalid — wrong password, destroying key');
-    key.destroy();
-    return null;
-  } catch (err: any) {
-    const message = err?.message || '';
-    console.error('[identityService] Decryption error:', message);
-    // Data corruption/tampering errors should be surfaced to the user
-    if (message.includes('corrupted') || message.includes('tampered')) {
-      return { error: 'Vault data is corrupted. This can happen after an app update or data migration. You may need to reset your vault.' };
-    }
-    // Unknown errors — surface to user
-    if (message.includes('Missing') || message.includes('invalid') || message.includes('failed')) {
-      return { error: `Unlock failed: ${message}` };
-    }
-    // For other errors, still increment attempts but don't expose internals
-    await incrementUnlockAttempts();
-    return null;
-  }
-}
-
-/**
- * Get the Supabase user ID from the current session.
- * Returns null if not authenticated.
- */
-export async function getStoredSupabaseUserId(): Promise<string | null> {
-  console.log('[identityService] getStoredSupabaseUserId called');
-  const { data } = await supabase.auth.getSession();
-  const userId = data.session?.user?.id ?? null;
-  console.log('[identityService] getStoredSupabaseUserId result:', userId);
-  return userId;
-}
-
-/**
- * Get decrypted Ed25519 private key
- */
-export async function getDecryptedPrivateKey(password: string): Promise<number[] | null> {
-  const identity = await getIdentity();
-  if (!identity) return null;
-
-  const result = await unlockIdentity(password);
-  if (!result || 'error' in result) return null;
-  const masterKey = result;
-
-  try {
-    return await decryptBytes(identity.encryptedPrivateKey, masterKey);
-  } catch {
-    return null;
-  } finally {
-    masterKey.destroy();
-  }
-}
-
-/**
- * Get decrypted X25519 private key (for ECDH key exchange).
- * Requires the master key to be available in the singleton.
- */
-export async function getDecryptedX25519PrivateKey(
-  masterKey: SecureKey,
-): Promise<number[] | null> {
-  const identity = await getIdentity();
-  if (!identity?.encryptedX25519PrivateKey) return null;
-
-  try {
-    return await decryptBytes(identity.encryptedX25519PrivateKey, masterKey);
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Check if identity exists
- */
 export async function hasIdentity(): Promise<boolean> {
   const stored = await secureStorage.getItem(IDENTITY_KEY);
   return stored !== null;
 }
 
 /**
- * Clear identity AND all vault data (full reset)
- * Also signs out from Supabase and deletes cloud data.
+ * Unlock identity: derive PasswordKey, decrypt VEK, verify by decrypting private key.
+ * Returns PasswordKey and encryptedVEKPassword for caching.
  */
+export async function unlockIdentity(
+  password: string,
+  encryptedVEKPasswordFromCloud: string,
+): Promise<UnlockResult | null | { error: string }> {
+  const identity = await getIdentity();
+  if (!identity) return null;
+
+  const isLockedOut = await checkLockout();
+  if (isLockedOut) {
+    return { error: 'Account is temporarily locked. Please try again later.' };
+  }
+
+  try {
+    const { key: passwordKey } = await deriveMasterKey(password, identity.salt);
+
+    // Decrypt VEK from cloud
+    let vekBytes: number[];
+    try {
+      vekBytes = await decryptBytes(encryptedVEKPasswordFromCloud, passwordKey);
+    } catch {
+      passwordKey.destroy();
+      await incrementUnlockAttempts();
+      return null; // wrong password
+    }
+
+    const vek = new SecureKey(vekBytes);
+
+    // Verify by decrypting Ed25519 private key
+    const decrypted = await decryptBytes(identity.encryptedPrivateKey, vek);
+    if (decrypted) {
+      await secureStorage.deleteItem(ATTEMPT_COUNT_KEY);
+      vek.destroy();
+      return { passwordKey, encryptedVEKPassword: encryptedVEKPasswordFromCloud };
+    }
+
+    vek.destroy();
+    passwordKey.destroy();
+    return null;
+  } catch {
+    await incrementUnlockAttempts();
+    return null;
+  }
+}
+
+export async function getDecryptedPrivateKey(
+  password: string,
+  encryptedVEKPasswordFromCloud: string,
+): Promise<number[] | null> {
+  const result = await unlockIdentity(password, encryptedVEKPasswordFromCloud);
+  if (!result || 'error' in result) return null;
+
+  try {
+    const vek = await decryptBytes(result.encryptedVEKPassword, result.passwordKey);
+    const identity = await getIdentity();
+    if (!identity) return null;
+    return await decryptBytes(identity.encryptedPrivateKey, new SecureKey(vek));
+  } catch {
+    return null;
+  } finally {
+    result.passwordKey.destroy();
+  }
+}
+
+export async function getDecryptedX25519PrivateKey(
+  passwordKey: SecureKey,
+  encryptedVEKPassword: string,
+): Promise<number[] | null> {
+  const identity = await getIdentity();
+  if (!identity?.encryptedX25519PrivateKey) return null;
+
+  try {
+    const vekBytes = await decryptBytes(encryptedVEKPassword, passwordKey);
+    const vek = new SecureKey(vekBytes);
+    const result = await decryptBytes(identity.encryptedX25519PrivateKey, vek);
+    vek.destroy();
+    return result;
+  } catch {
+    return null;
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Password Change (VEK re-wrap only — no vault DEK changes)
+// ────────────────────────────────────────────────────────────────────────────
+
+export async function changePassword(
+  oldPassword: string,
+  newPassword: string,
+  encryptedVEKPassword: string,
+): Promise<SecureKey | null> {
+  const identity = await getIdentity();
+  if (!identity) return null;
+
+  // Verify old password and decrypt VEK
+  const { key: oldKey } = await deriveMasterKey(oldPassword, identity.salt);
+  let vekBytes: number[];
+  try {
+    vekBytes = await decryptBytes(encryptedVEKPassword, oldKey);
+  } catch {
+    oldKey.destroy();
+    return null;
+  }
+  oldKey.destroy();
+
+  const vek = new SecureKey(vekBytes);
+
+  // Update Supabase Auth password
+  const { error: supabaseError } = await (await import('../../services/supabaseClient')).supabase.auth.updateUser({ password: newPassword });
+  if (supabaseError) {
+    vek.destroy();
+    return null;
+  }
+
+  // Derive new PasswordKey + new salt
+  const { key: newKey, salt: newSalt } = await deriveMasterKey(newPassword);
+
+  // Re-wrap VEK with new PasswordKey
+  const newEncryptedVEKPassword = await encryptBytes(vekBytes, newKey);
+
+  // Update identity (new salt, private keys unchanged — still VEK-wrapped)
+  const updatedIdentity: Identity = {
+    ...identity,
+    salt: newSalt,
+  };
+  await secureStorage.setItem(IDENTITY_KEY, JSON.stringify(updatedIdentity));
+
+  // Update users row in cloud
+  const userId = (await (await import('../../services/supabaseClient')).supabase.auth.getSession()).data.session?.user?.id;
+  if (userId) {
+    await supabase.from('users').update({
+      salt: JSON.stringify(newSalt),
+      encrypted_vek_password: newEncryptedVEKPassword,
+    }).eq('id', userId);
+  }
+
+  vek.destroy();
+
+  return newKey;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Forgot Password — Recovery Key flow
+// ────────────────────────────────────────────────────────────────────────────
+
+interface RecoveryChangeResult {
+  passwordKey: SecureKey;
+  newEncryptedVEKPassword: string;
+}
+
+/**
+ * Reset password using recovery key.
+ * Decrypts VEK from encryptedVEKRecovery, derives new PasswordKey, re-wraps VEK.
+ */
+export async function changePasswordWithRecoveryKey(
+  recoveryKeyInput: string,
+  newPassword: string,
+): Promise<RecoveryChangeResult | { error: string }> {
+  // Fetch user's profile from cloud
+  const { data: { session } } = await (await import('../../services/supabaseClient')).supabase.auth.getSession();
+  if (!session?.user?.id) {
+    return { error: 'Not authenticated. Please sign in first.' };
+  }
+
+  const { data: userData, error: fetchError } = await supabase
+    .from('users')
+    .select('encrypted_vek_recovery, salt')
+    .eq('id', session.user.id)
+    .single();
+
+  if (fetchError || !userData?.encrypted_vek_recovery) {
+    return { error: 'Recovery key not set up for this account.' };
+  }
+
+  // Parse recovery key
+  const recoveryBytes = (await import('@/core/crypto')).parseRecoveryKey(recoveryKeyInput);
+  if (!recoveryBytes) {
+    return { error: 'Invalid recovery key format.' };
+  }
+
+  // Decrypt VEK
+  let vekBytes: number[] | null = null;
+  try {
+    vekBytes = await decryptVEKWithRecoveryKey(userData.encrypted_vek_recovery, recoveryBytes);
+  } catch {
+    // Fall through to generic error
+  }
+  if (!vekBytes) {
+    return { error: 'Invalid recovery key.' };
+  }
+
+  const vek = new SecureKey(vekBytes);
+
+  // Verify VEK works by decrypting identity private key
+  const identity = await getIdentity();
+  if (identity?.encryptedPrivateKey) {
+    try {
+      await decryptBytes(identity.encryptedPrivateKey, vek);
+    } catch {
+      vek.destroy();
+      return { error: 'Invalid recovery key.' };
+    }
+  }
+
+  // Derive new PasswordKey + salt
+  const { key: newKey, salt: newSalt } = await deriveMasterKey(newPassword);
+
+  // Re-wrap VEK
+  const newEncryptedVEKPassword = await encryptBytes(vekBytes, newKey);
+
+  // Update identity (new salt, same encrypted keys)
+  if (identity) {
+    const updatedIdentity: Identity = { ...identity, salt: newSalt };
+    await secureStorage.setItem(IDENTITY_KEY, JSON.stringify(updatedIdentity));
+  }
+
+  // Update users row
+  await supabase.from('users').update({
+    salt: JSON.stringify(newSalt),
+    encrypted_vek_password: newEncryptedVEKPassword,
+  } as any).eq('id', session.user.id);
+
+  // Also update Supabase Auth password
+  await (await import('../../services/supabaseClient')).supabase.auth.updateUser({ password: newPassword }).catch(() => {});
+
+  vek.destroy();
+
+  return { passwordKey: newKey, newEncryptedVEKPassword };
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// v1 → v2 Migration
+// ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Migrate a v1 user to v2 (VEK-based) architecture.
+ * - Decrypts vault DEKs with old PasswordKey
+ * - Generates VEK, re-encrypts DEKs with VEK
+ * - Re-encrypts private keys with VEK
+ * - Creates RecoveryKey
+ * - Uploads new metadata to cloud
+ *
+ * Entry ciphertext is NEVER touched.
+ */
+export async function migrateV1ToV2(
+  password: string,
+): Promise<{ recoveryKey: string } | { error: string }> {
+  const vaultService = await import('@/core/vault/vaultService');
+  const identity = await getIdentity();
+  if (!identity) return { error: 'No identity found.' };
+
+  // Derive old PasswordKey
+  const { key: oldKey } = await deriveMasterKey(password, identity.salt);
+
+  // Verify password by decrypting Ed25519 private key
+  let oldPrivateKey: number[];
+  try {
+    oldPrivateKey = await decryptBytes(identity.encryptedPrivateKey, oldKey);
+  } catch {
+    oldKey.destroy();
+    return { error: 'Wrong password.' };
+  }
+
+  // Generate VEK
+  const vekBytes = await generateRandomBytes(32);
+  const vek = new SecureKey(vekBytes);
+
+  // Generate RecoveryKey
+  const { bytes: recoveryBytes, formatted: recoveryFormatted } = await generateRecoveryKey();
+
+  // Re-encrypt private keys with VEK
+  let oldX25519PrivateKey: number[] | undefined;
+  if (identity.encryptedX25519PrivateKey) {
+    try {
+      oldX25519PrivateKey = await decryptBytes(identity.encryptedX25519PrivateKey, oldKey);
+    } catch {}
+  }
+
+  const newEncryptedPrivateKey = await encryptBytes(oldPrivateKey, vek);
+  let newEncryptedX25519PrivateKey = identity.encryptedX25519PrivateKey;
+  if (oldX25519PrivateKey) {
+    newEncryptedX25519PrivateKey = await encryptBytes(oldX25519PrivateKey, vek);
+  }
+
+  // Re-encrypt each vault DEK with VEK
+  const vaults = await vaultService.getVaults();
+  for (const vault of vaults) {
+    try {
+      const dekBytes = await decryptBytes(vault.encryptedEncryptionKey, oldKey);
+      const newEncryptedDEK = await encryptBytes(dekBytes, vek);
+      await vaultService.updateVaultEncryptedKey(vault.id, newEncryptedDEK);
+    } catch {
+      // Skip failed vaults
+    }
+  }
+
+  // Encrypt VEK with PasswordKey
+  const encryptedVEKPassword = await encryptBytes(vekBytes, oldKey);
+
+  // Encrypt VEK with RecoveryKey
+  const encryptedVEKRecovery = await encryptVEKWithRecoveryKey(vekBytes, recoveryBytes);
+
+  // Update local identity
+  const updatedIdentity: Identity = {
+    ...identity,
+    encryptedPrivateKey: newEncryptedPrivateKey,
+    encryptedX25519PrivateKey: newEncryptedX25519PrivateKey,
+    cryptoVersion: 2,
+  };
+  await secureStorage.setItem(IDENTITY_KEY, JSON.stringify(updatedIdentity));
+
+  // Upload to cloud
+  const { data: { session } } = await (await import('../../services/supabaseClient')).supabase.auth.getSession();
+  if (session?.user?.id) {
+    await supabase.from('users').update({
+      encrypted_vek_password: encryptedVEKPassword,
+      encrypted_vek_recovery: encryptedVEKRecovery,
+      crypto_version: 2,
+    }).eq('id', session.user.id);
+  }
+
+  oldKey.destroy();
+  vek.destroy();
+
+  return { recoveryKey: recoveryFormatted };
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Regenerate Recovery Key
+// ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Generate a new RecoveryKey, re-wrap VEK, update cloud.
+ * Requires an unlocked session (cached PasswordKey must be available).
+ */
+export async function regenerateRecoveryKey(
+  encryptedVEKPassword: string,
+): Promise<string | null> {
+  const { getPasswordKey } = await import('@/core/keyStore');
+  const passwordKey = getPasswordKey();
+  if (!passwordKey) return null;
+
+  try {
+    const vekBytes = await decryptBytes(encryptedVEKPassword, passwordKey);
+    const { bytes: newRecoveryBytes, formatted: newFormatted } = await generateRecoveryKey();
+    const newEncryptedVEKRecovery = await encryptVEKWithRecoveryKey(vekBytes, newRecoveryBytes);
+
+    const { data: { session } } = await (await import('../../services/supabaseClient')).supabase.auth.getSession();
+    if (session?.user?.id) {
+      await supabase.from('users').update({
+        encrypted_vek_recovery: newEncryptedVEKRecovery,
+      }).eq('id', session.user.id);
+    }
+
+    return newFormatted;
+  } catch {
+    return null;
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Fetch cloud crypto params (updated for v2)
+// ────────────────────────────────────────────────────────────────────────────
+
+export interface CloudCryptoParams {
+  salt: number[];
+  publicKey: number[];
+  encryptedVEKPassword: string | null;
+  encryptedVEKRecovery: string | null;
+  cryptoVersion: number;
+}
+
+export async function fetchUserProfile(userId: string): Promise<CloudCryptoParams | { error: string }> {
+  const { data, error } = await supabase
+    .from('users')
+    .select('public_key, salt, encrypted_vek_password, encrypted_vek_recovery, crypto_version')
+    .eq('id', userId)
+    .single();
+
+  if (error || !data) {
+    return { error: 'Failed to fetch user profile' };
+  }
+
+  return {
+    salt: JSON.parse(data.salt),
+    publicKey: JSON.parse(data.public_key),
+    encryptedVEKPassword: data.encrypted_vek_password,
+    encryptedVEKRecovery: data.encrypted_vek_recovery,
+    cryptoVersion: data.crypto_version,
+  };
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Clear identity (full reset)
+// ────────────────────────────────────────────────────────────────────────────
+
 export async function clearIdentity(): Promise<void> {
   const errors: Error[] = [];
 
-  // Sign out from Supabase
-  try {
-    await supabaseSignOut();
-  } catch (e) {
-    errors.push(e instanceof Error ? e : new Error('Failed to sign out from Supabase'));
+  try { await supabaseSignOut(); } catch (e) {
+    errors.push(e instanceof Error ? e : new Error('Failed to sign out'));
   }
 
-  // Clear SecureStore
-  try {
-    await secureStorage.deleteItem(IDENTITY_KEY);
-  } catch (e) {
+  try { await secureStorage.deleteItem(IDENTITY_KEY); } catch (e) {
     errors.push(e instanceof Error ? e : new Error('Failed to clear identity'));
   }
-  try {
-    await secureStorage.deleteItem(ATTEMPT_COUNT_KEY);
-  } catch (e) {
+  try { await secureStorage.deleteItem(ATTEMPT_COUNT_KEY); } catch (e) {
     errors.push(e instanceof Error ? e : new Error('Failed to clear attempts'));
   }
 
-  // Clear AsyncStorage (vaults & entries)
   try {
     await AsyncStorage.multiRemove([VAULTS_KEY, ENTRIES_KEY]);
   } catch (e) {
@@ -267,76 +598,27 @@ export async function clearIdentity(): Promise<void> {
   }
 
   if (errors.length > 0) {
-    console.error('clearIdentity encountered errors:', errors.map(e => e.message).join(', '));
+    console.error('clearIdentity errors:', errors.map(e => e.message).join(', '));
   }
 }
 
-/**
- * Change password — re-encrypt all data with new password
- * Also updates the Supabase Auth password.
- * Tries Supabase update FIRST so we can rollback if it fails.
- */
-export async function changePassword(
-  oldPassword: string,
-  newPassword: string,
-  masterKey: SecureKey
-): Promise<SecureKey | null> {
-  const identity = await getIdentity();
-  if (!identity) return null;
-
-  // Verify old password
-  const oldKey = await unlockIdentity(oldPassword);
-  if (!oldKey || 'error' in oldKey) return null;
-
-  // Try Supabase password update FIRST (can be retried, no local state changed yet)
-  const { error: supabaseError } = await supabase.auth.updateUser({ password: newPassword });
-  if (supabaseError) {
-    oldKey.destroy();
-    console.error('Failed to update Supabase password:', supabaseError);
-    return null;
-  }
-
-  // Now derive new key and re-encrypt locally
-  const { key: newKey, salt: newSalt } = await deriveMasterKey(newPassword);
-
-  // Re-encrypt the private keys with the new password
-  const privateKey = await decryptBytes(identity.encryptedPrivateKey, oldKey);
-  const encryptedPrivateKey = await encryptBytes(privateKey, newKey);
-
-  let encryptedX25519PrivateKey = identity.encryptedX25519PrivateKey;
-  if (identity.encryptedX25519PrivateKey) {
-    const x25519PrivateKey = await decryptBytes(identity.encryptedX25519PrivateKey, oldKey);
-    encryptedX25519PrivateKey = await encryptBytes(x25519PrivateKey, newKey);
-  }
-
-  // Update identity
-  const updatedIdentity: Identity = {
-    ...identity,
-    salt: newSalt,
-    encryptedPrivateKey,
-    encryptedX25519PrivateKey,
-  };
-
-  await secureStorage.setItem(IDENTITY_KEY, JSON.stringify(updatedIdentity));
-  oldKey.destroy();
-
-  return newKey;
+export async function getStoredSupabaseUserId(): Promise<string | null> {
+  const { data } = await supabase.auth.getSession();
+  return data.session?.user?.id ?? null;
 }
 
-// --- Rate limiting helpers ---
+// ────────────────────────────────────────────────────────────────────────────
+// Rate limiting
+// ────────────────────────────────────────────────────────────────────────────
 
 async function checkLockout(): Promise<boolean> {
   const attemptData = await secureStorage.getItem(ATTEMPT_COUNT_KEY);
   if (!attemptData) return false;
 
   const { count, timestamp } = JSON.parse(attemptData);
-
   if (count >= MAX_UNLOCK_ATTEMPTS) {
     const elapsed = Date.now() - timestamp;
-    if (elapsed < LOCKOUT_DURATION_MS) {
-      return true; // Still locked
-    }
-    // Lockout expired — reset
+    if (elapsed < LOCKOUT_DURATION_MS) return true;
     await secureStorage.deleteItem(ATTEMPT_COUNT_KEY);
   }
 
@@ -349,14 +631,8 @@ async function incrementUnlockAttempts(): Promise<void> {
 
   if (attemptData) {
     const { count, timestamp } = JSON.parse(attemptData);
-    await secureStorage.setItem(
-      ATTEMPT_COUNT_KEY,
-      JSON.stringify({ count: count + 1, timestamp })
-    );
+    await secureStorage.setItem(ATTEMPT_COUNT_KEY, JSON.stringify({ count: count + 1, timestamp }));
   } else {
-    await secureStorage.setItem(
-      ATTEMPT_COUNT_KEY,
-      JSON.stringify({ count: 1, timestamp: now })
-    );
+    await secureStorage.setItem(ATTEMPT_COUNT_KEY, JSON.stringify({ count: 1, timestamp: now }));
   }
 }

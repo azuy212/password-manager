@@ -5,97 +5,169 @@ import {
   getIdentity,
   bootstrapIdentityFromCloud,
   getStoredSupabaseUserId,
+  fetchUserProfile,
+  migrateV1ToV2,
 } from './identityService';
-import { supabaseSignIn, fetchUserCryptoParams } from './supabaseAuthService';
+import { supabaseSignIn } from './supabaseAuthService';
+import { isBiometricUnlockEnabled, unlockWithBiometrics } from './biometricService';
+import { setPasswordKey, setCachedEncryptedVEK } from '../keyStore';
 import type { SecureKey } from '../crypto';
+
+export interface UnlockResult {
+  passwordKey: SecureKey;
+  supabaseUserId: string;
+  needsMigration?: boolean;
+  migrationRecoveryKey?: string;
+  migrationWaiting?: boolean;
+}
 
 interface UseUnlockReturn {
   isUnlocked: boolean;
   hasIdentity: boolean;
-  unlock: (email: string, password: string) => Promise<{ masterKey: SecureKey; supabaseUserId: string } | { error: string }>;
+  biometricUnlockAvailable: boolean;
+  unlock: (email: string, password: string) => Promise<UnlockResult | { error: string }>;
+  unlockWithBio: () => Promise<UnlockResult | { error: string }>;
+  confirmMigration: () => Promise<void>;
+  pendingMigrationRecoveryKey: string | null;
   lock: () => void;
 }
 
 /**
  * Hook to manage unlock state.
  *
- * Flow on device with local identity:
- *   1. Verify password against local identity
- *   2. Sign in to Supabase (or reuse persisted session)
- *
- * Flow on second device (no local identity):
- *   1. Sign in to Supabase with email/password
- *   2. Fetch salt + public_key from cloud users table
- *   3. Derive master key from password + cloud salt
- *   4. Create local identity (new Ed25519 keypair) for future offline unlocks
+ * v2 flow (VEK-based):
+ *  1. Sign in to Supabase
+ *  2. Fetch user profile (salt, publicKey, encryptedVEKPassword, cryptoVersion)
+ *  3. If cryptoVersion === 1 → run migration
+ *  4. Derive PasswordKey from password + salt
+ *  5. Decrypt VEK from encryptedVEKPassword
+ *  6. Verify by decrypting Ed25519 private key
+ *  7. Cache PasswordKey + encryptedVEKPassword
  */
 export function useUnlock(): UseUnlockReturn {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [hasIdentityState, setHasIdentityState] = useState<boolean | null>(null);
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
+  const [pendingMigrationRecoveryKey, setPendingMigrationRecoveryKey] = useState<string | null>(null);
+  const [pendingPassword, setPendingPassword] = useState<string | null>(null);
 
   useEffect(() => {
     hasIdentity().then(setHasIdentityState);
+    isBiometricUnlockEnabled().then(setBiometricAvailable);
   }, []);
 
-  const unlock = useCallback(async (email: string, password: string): Promise<{ masterKey: SecureKey; supabaseUserId: string } | { error: string }> => {
-    console.log('[useUnlock] Step 1: Signing in to Supabase...');
-    // Step 1: Always sign in to Supabase first — this works on any device
+  const unlock = useCallback(async (
+    email: string,
+    password: string,
+  ): Promise<UnlockResult | { error: string }> => {
     const signInResult = await supabaseSignIn(email, password);
-    console.log('[useUnlock] Supabase sign-in result:', JSON.stringify({ success: signInResult.success, userId: signInResult.userId, hasError: !!signInResult.error }));
     if (!signInResult.success) {
       return { error: signInResult.error || 'Failed to sign in to cloud' };
     }
     const supabaseUserId = signInResult.userId!;
 
-    // Step 2: Check if we have a local identity
-    console.log('[useUnlock] Step 2: Checking local identity...');
     const localIdentity = await getIdentity();
-    console.log('[useUnlock] Local identity exists:', !!localIdentity);
     if (localIdentity) {
-      // Device already has identity — verify password locally
-      console.log('[useUnlock] Verifying password locally...');
-      const masterKey = await unlockIdentity(password);
-      console.log('[useUnlock] Local unlock result:', masterKey === null ? 'wrong password' : 'error' in masterKey ? masterKey.error : 'success');
+      // Fetch cloud profile for VEK metadata
+      const profile = await fetchUserProfile(supabaseUserId);
+      if ('error' in profile) {
+        return { error: profile.error };
+      }
 
-      // Handle corruption/error case
-      if (masterKey && 'error' in masterKey) {
-        return { error: masterKey.error };
+      // Check if migration needed
+      if (profile.cryptoVersion < 2 || !profile.encryptedVEKPassword) {
+        // Run migration
+        const migrationResult = await migrateV1ToV2(password);
+        if ('error' in migrationResult) {
+          return { error: migrationResult.error };
+        }
+        // Store pending migration recovery key — user must confirm before proceeding
+        setPendingMigrationRecoveryKey(migrationResult.recoveryKey);
+        setPendingPassword(password);
+        return {
+          passwordKey: null as unknown as SecureKey,
+          supabaseUserId,
+          needsMigration: true,
+          migrationWaiting: true,
+        };
       }
-      if (!masterKey) {
-        // Wrong password — sign out to avoid stale session
-        console.log('[useUnlock] Wrong password, signing out from Supabase...');
-        await (await import('../../services/supabaseClient')).supabase.auth.signOut().catch(() => {});
-        return { error: 'Wrong password or account locked' };
+
+      // Standard v2 unlock
+      const unlockResult = await unlockIdentity(password, profile.encryptedVEKPassword);
+      if (!unlockResult) {
+        await supabaseSignIn('', '').catch(() => {});
+        return { error: 'Wrong password or account locked.' };
       }
-      console.log('[useUnlock] Local unlock successful');
+      if ('error' in unlockResult) {
+        return { error: unlockResult.error };
+      }
+
+      // Cache
+      setPasswordKey(unlockResult.passwordKey);
+      setCachedEncryptedVEK(unlockResult.encryptedVEKPassword);
+
       setIsUnlocked(true);
-      return { masterKey, supabaseUserId };
+      return { passwordKey: unlockResult.passwordKey, supabaseUserId };
     }
 
-    // Step 3: No local identity — bootstrap from cloud (second device)
-    console.log('[useUnlock] Step 3: No local identity, bootstrapping from cloud...');
-    console.log('[useUnlock] Fetching crypto params for userId:', supabaseUserId);
-    const cryptoParams = await fetchUserCryptoParams(supabaseUserId);
-    if ('error' in cryptoParams) {
-      console.error('[useUnlock] Failed to fetch crypto params:', cryptoParams.error);
-      return { error: cryptoParams.error };
+    // Second device — bootstrap from cloud
+    const profile = await fetchUserProfile(supabaseUserId);
+    if ('error' in profile) {
+      return { error: profile.error };
     }
-    console.log('[useUnlock] Crypto params fetched, bootstrapping identity...');
+    if (!profile.encryptedVEKPassword) {
+      return { error: 'Vault not initialized with VEK. Please use your primary device first.' };
+    }
 
     const bootstrapResult = await bootstrapIdentityFromCloud(
       password,
-      cryptoParams.salt,
-      cryptoParams.publicKey,
-      supabaseUserId
+      profile.salt,
+      profile.publicKey,
+      supabaseUserId,
+      profile.encryptedVEKPassword,
     );
     if ('error' in bootstrapResult) {
-      console.error('[useUnlock] Bootstrap failed:', bootstrapResult.error);
       return { error: bootstrapResult.error };
     }
 
-    console.log('[useUnlock] Cloud bootstrap successful');
+    setPasswordKey(bootstrapResult.passwordKey);
+    setCachedEncryptedVEK(profile.encryptedVEKPassword);
+
     setIsUnlocked(true);
-    return { masterKey: bootstrapResult.masterKey, supabaseUserId };
+    return { passwordKey: bootstrapResult.passwordKey, supabaseUserId };
+  }, []);
+
+  const confirmMigration = useCallback(async () => {
+    if (!pendingPassword || !pendingMigrationRecoveryKey) return;
+    // Re-run unlock after migration is confirmed
+    const profile = await fetchUserProfile(
+      (await (await import('../../services/supabaseClient')).supabase.auth.getSession()).data.session?.user?.id ?? '',
+    );
+    if ('error' in profile || !profile.encryptedVEKPassword) return;
+
+    const unlockResult = await unlockIdentity(pendingPassword, profile.encryptedVEKPassword);
+    if (!unlockResult || 'error' in unlockResult) return;
+
+    setPasswordKey(unlockResult.passwordKey);
+    setCachedEncryptedVEK(unlockResult.encryptedVEKPassword);
+    setPendingPassword(null);
+    setIsUnlocked(true);
+  }, [pendingPassword, pendingMigrationRecoveryKey]);
+
+  const unlockWithBio = useCallback(async (): Promise<UnlockResult | { error: string }> => {
+    const vek = await unlockWithBiometrics();
+    if (!vek) return { error: 'Biometric unlock cancelled or failed.' };
+
+    // Get supabase userId from session
+    const { supabase } = await import('../../services/supabaseClient');
+    const { data } = await supabase.auth.getSession();
+    const supabaseUserId = data.session?.user?.id;
+    if (!supabaseUserId) return { error: 'No Supabase session. Please sign in with password first.' };
+
+    setIsUnlocked(true);
+    // Note: PasswordKey not cached during biometric unlock (password not available)
+    // For vault operations, VEK will need to be derived from DUK again
+    return { passwordKey: null as unknown as SecureKey, supabaseUserId };
   }, []);
 
   const lock = useCallback(() => {
@@ -105,7 +177,11 @@ export function useUnlock(): UseUnlockReturn {
   return {
     isUnlocked,
     hasIdentity: hasIdentityState ?? false,
+    biometricUnlockAvailable: biometricAvailable,
     unlock,
+    unlockWithBio,
+    confirmMigration,
+    pendingMigrationRecoveryKey,
     lock,
   };
 }

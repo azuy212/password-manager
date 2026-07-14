@@ -2,7 +2,7 @@ import { supabase } from '../../services/supabaseClient';
 import { encryptBytes, decryptBytes, SecureKey } from '../crypto';
 import { fetchX25519PublicKey, getUserIdByEmail } from '../auth/supabaseAuthService';
 import { getDecryptedX25519PrivateKey } from '../auth/identityService';
-import { getMasterKey } from '../masterKeyStore';
+import { getMasterKey, getCachedEncryptedVEK } from '../keyStore';
 import { ecdh } from '../crypto/x25519';
 
 export interface ShareResult {
@@ -67,8 +67,9 @@ export async function shareEntryWithECDH(
   vaultDEK: SecureKey,
 ): Promise<ShareResult> {
   try {
-    const masterKey = getMasterKey();
-    if (!masterKey) return { success: false, error: 'Not authenticated' };
+    const passwordKey = getMasterKey();
+    const encryptedVEKPassword = getCachedEncryptedVEK();
+    if (!passwordKey || !encryptedVEKPassword) return { success: false, error: 'Not authenticated' };
 
     const recipientId = await getUserIdByEmail(recipientEmail);
     if (!recipientId) return { success: false, error: 'User not found' };
@@ -78,7 +79,7 @@ export async function shareEntryWithECDH(
     const recipientX25519Pub = await fetchX25519PublicKey(recipientId);
     if (!recipientX25519Pub) return { success: false, error: 'Recipient has no X25519 key' };
 
-    const senderX25519Priv = await getDecryptedX25519PrivateKey(masterKey);
+    const senderX25519Priv = await getDecryptedX25519PrivateKey(passwordKey, encryptedVEKPassword);
     if (!senderX25519Priv) return { success: false, error: 'Your X25519 key not found' };
 
     // ECDH: derive shared secret
@@ -156,10 +157,11 @@ export async function unwrapSharedEntryKey(
   encryptedKey: string,
   ownerX25519PublicKey: number[],
 ): Promise<SecureKey | null> {
-  const masterKey = getMasterKey();
-  if (!masterKey) return null;
+  const passwordKey = getMasterKey();
+  const encryptedVEKPassword = getCachedEncryptedVEK();
+  if (!passwordKey || !encryptedVEKPassword) return null;
 
-  const recipientX25519Priv = await getDecryptedX25519PrivateKey(masterKey);
+  const recipientX25519Priv = await getDecryptedX25519PrivateKey(passwordKey, encryptedVEKPassword);
   if (!recipientX25519Priv) return null;
 
   try {

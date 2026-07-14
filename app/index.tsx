@@ -15,7 +15,8 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useUnlock } from '../core/auth/useUnlock';
-import { getIdentity, clearIdentity, getStoredSupabaseUserId } from '../core/auth/identityService';
+import { getIdentity, clearIdentity, getStoredSupabaseUserId, migrateV1ToV2 } from '../core/auth/identityService';
+import { isBiometricUnlockEnabled, unlockWithBiometrics } from '../core/auth/biometricService';
 import { appActions, appStore$ } from '../store/appStore';
 import { useValue } from '@legendapp/state/react';
 import { useTheme } from '../hooks/useTheme';
@@ -29,6 +30,16 @@ export default function UnlockScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { unlock } = useUnlock();
   const [hasIdentity, setHasIdentity] = useState<boolean | null>(null);
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
+  const [showBiometric, setShowBiometric] = useState(false);
+
+  // Migration recovery key display
+  const [showMigrationKey, setShowMigrationKey] = useState(false);
+  const [migrationKey, setMigrationKey] = useState<string | null>(null);
+  const [migrationConfirmed, setMigrationConfirmed] = useState(false);
+  const [pendingMasterKey, setPendingMasterKey] = useState<any>(null);
+  const [pendingUserId, setPendingUserId] = useState<string | null>(null);
+
   const router = useRouter();
   const colors = useTheme();
   const insets = useSafeAreaInsets();
@@ -36,37 +47,33 @@ export default function UnlockScreen() {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const passwordRef = useRef<TextInput>(null);
 
-  // Use fine-grained loading state
   const isLoading = useValue(appStore$.isLoading);
 
   useEffect(() => {
-    console.log('[Unlock] Component mounted, checking identity...');
     Animated.timing(fadeAnim, {
       toValue: 1,
       duration: 400,
       useNativeDriver: true,
     }).start();
 
-    // Always show unlock screen — if no local identity exists, the unlock flow
-    // will attempt cloud bootstrap (second device). Only redirect to setup if
-    // the Supabase session doesn't exist either (truly new user).
     getIdentity().then(identity => {
-      console.log('[Unlock] Local identity found:', !!identity);
       if (identity) {
         setHasIdentity(true);
       } else {
-        console.log('[Unlock] No local identity, checking cloud session...');
-        // No local identity — check if there's a persisted Supabase session
         getStoredSupabaseUserId().then(uid => {
-          console.log('[Unlock] Stored Supabase userId:', uid);
           if (uid) {
-            // User has a cloud account — show unlock with email hint
             setHasIdentity(true);
           } else {
-            // Truly new — no local identity and no cloud session
             setHasIdentity(false);
           }
         });
+      }
+    });
+
+    isBiometricUnlockEnabled().then(enabled => {
+      setBiometricEnabled(enabled);
+      if (enabled) {
+        setShowBiometric(true);
       }
     });
   }, [fadeAnim, router]);
@@ -77,43 +84,147 @@ export default function UnlockScreen() {
       return;
     }
 
-    console.log('[Unlock] Submitting unlock for email:', email.trim());
     setIsSubmitting(true);
     appActions.setLoading(true);
     try {
-      console.log('[Unlock] Calling unlock()...');
       const result = await unlock(email, password);
-      console.log('[Unlock] unlock() returned, has error:', 'error' in result);
       if ('error' in result) {
-        console.error('[Unlock] Unlock error:', result.error);
         Alert.alert('Error', result.error);
         return;
       }
-      const { masterKey, supabaseUserId } = result;
-      console.log('[Unlock] Setting store values, identity:', !!masterKey, 'userId:', supabaseUserId);
+
+      if (result.needsMigration && result.migrationWaiting) {
+        // Migration happened — re-run unlock to get keys
+        const reResult = await unlock(email, password);
+        if ('error' in reResult) {
+          Alert.alert('Error', reResult.error);
+          return;
+        }
+        const identity = await getIdentity();
+        if (identity) {
+          appActions.setIdentity(identity);
+        }
+        appActions.setUserId(reResult.supabaseUserId);
+        appActions.setAuthenticated(true);
+        router.replace('/(tabs)');
+        return;
+      }
+
+      const { passwordKey, supabaseUserId } = result;
       const identity = await getIdentity();
       if (identity) {
         appActions.setIdentity(identity);
       }
       appActions.setUserId(supabaseUserId);
-      appActions.setMasterKey(masterKey);
-      console.log('[Unlock] Navigating to tabs...');
+      appActions.setPasswordKey(passwordKey);
       appActions.setAuthenticated(true);
       router.replace('/(tabs)');
     } catch (err: any) {
-      console.error('[Unlock] Unexpected exception during unlock:', err);
       Alert.alert('Error', 'Unable to unlock vault');
     } finally {
-      console.log('[Unlock] Clearing loading state');
       appActions.setLoading(false);
       setIsSubmitting(false);
     }
   }, [email, password, isSubmitting, unlock, router]);
 
+  const handleBiometricUnlock = useCallback(async () => {
+    setIsSubmitting(true);
+    try {
+      const result = await unlockWithBiometrics();
+      if (!result) {
+        Alert.alert('Error', 'Biometric unlock failed');
+        return;
+      }
+
+      const { supabase } = await import('../services/supabaseClient');
+      const { data } = await supabase.auth.getSession();
+      const userId = data.session?.user?.id;
+      if (!userId) {
+        // Need to sign in
+        Alert.alert('Sign In Required', 'Please enter your password to sign in first');
+        return;
+      }
+
+      const identity = await getIdentity();
+      if (identity) {
+        appActions.setIdentity(identity);
+      }
+      appActions.setUserId(userId);
+      appActions.setAuthenticated(true);
+      router.replace('/(tabs)');
+    } catch {
+      Alert.alert('Error', 'Biometric unlock failed');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [router]);
+
+  const handleMigrationConfirmed = useCallback(async () => {
+    setMigrationKey(null);
+    setShowMigrationKey(false);
+    if (pendingMasterKey && pendingUserId) {
+      const identity = await getIdentity();
+      if (identity) appActions.setIdentity(identity);
+      appActions.setUserId(pendingUserId);
+      appActions.setMasterKey(pendingMasterKey);
+      appActions.setAuthenticated(true);
+      router.replace('/(tabs)');
+    }
+  }, [pendingMasterKey, pendingUserId, router]);
+
+  const copyMigrationKey = useCallback(async () => {
+    if (migrationKey) {
+      const Clipboard = await import('expo-clipboard');
+      await Clipboard.setStringAsync(migrationKey);
+      Alert.alert('Copied', 'Recovery Key copied to clipboard');
+    }
+  }, [migrationKey]);
+
   const styles = useMemo(
     () => createStyles(colors, insets),
     [colors, insets],
   );
+
+  if (showMigrationKey && migrationKey) {
+    return (
+      <View style={isDesktop ? styles.webRoot : styles.container}>
+        <View style={styles.recoveryContainer}>
+          <View style={styles.iconContainer}>
+            <View style={styles.iconCircle}>
+              <Ionicons name="key" size={48} color={colors.accent} />
+            </View>
+          </View>
+          <Text style={styles.recoveryTitle}>Vault Updated</Text>
+          <Text style={styles.recoveryWarning}>
+            Your vault has been upgraded with recovery key support. Save this key now.
+          </Text>
+          <View style={styles.recoveryKeyBox}>
+            <Text style={styles.recoveryKeyText} selectable>{migrationKey}</Text>
+          </View>
+          <TouchableOpacity style={styles.copyBtn} onPress={copyMigrationKey} activeOpacity={0.8}>
+            <Ionicons name="copy-outline" size={18} color={colors.textInverse} />
+            <Text style={styles.copyBtnText}>Copy</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.confirmRow}
+            onPress={() => setMigrationConfirmed(!migrationConfirmed)}
+          >
+            <View style={[styles.checkbox, migrationConfirmed && styles.checkboxChecked]}>
+              {migrationConfirmed && <Ionicons name="checkmark" size={16} color={colors.textInverse} />}
+            </View>
+            <Text style={styles.confirmText}>I have saved my Recovery Key</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.continueBtn, !migrationConfirmed && styles.continueBtnDisabled]}
+            onPress={handleMigrationConfirmed}
+            disabled={!migrationConfirmed}
+          >
+            <Text style={styles.continueBtnText}>Continue</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
   if (hasIdentity === null) {
     return (
@@ -135,7 +246,6 @@ export default function UnlockScreen() {
         style={isDesktop ? styles.webContent : styles.container}
       >
       <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
-        {/* Lock Icon */}
         <View style={styles.iconContainer}>
           <View style={styles.iconCircle}>
             <Ionicons name="lock-closed" size={48} color={colors.accent} />
@@ -146,6 +256,18 @@ export default function UnlockScreen() {
         <Text style={styles.subtitle}>
           Enter your master password to continue
         </Text>
+
+        {showBiometric && (
+          <TouchableOpacity
+            style={styles.biometricButton}
+            onPress={handleBiometricUnlock}
+            activeOpacity={0.8}
+            disabled={isSubmitting}
+          >
+            <Ionicons name="finger-print" size={24} color={colors.textInverse} />
+            <Text style={styles.biometricButtonText}>Unlock with Face ID</Text>
+          </TouchableOpacity>
+        )}
 
         <TextInput
           style={styles.input}
@@ -176,8 +298,8 @@ export default function UnlockScreen() {
           onSubmitEditing={handleSubmit}
         />
 
-        <TouchableOpacity 
-          style={styles.button} 
+        <TouchableOpacity
+          style={styles.button}
           onPress={handleSubmit}
           activeOpacity={0.8}
           disabled={isSubmitting}
@@ -187,6 +309,13 @@ export default function UnlockScreen() {
           ) : (
             <Text style={styles.buttonText}>Unlock</Text>
           )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.linkButton}
+          onPress={() => router.push('/forgot-password')}
+        >
+          <Text style={styles.linkButtonText}>Forgot your password? Use Recovery Key</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -211,7 +340,7 @@ export default function UnlockScreen() {
             );
           }}
         >
-          <Text style={styles.resetButtonText}>Forgot Password? Reset Vault</Text>
+          <Text style={styles.resetButtonText}>Reset Vault</Text>
         </TouchableOpacity>
 
         {!hasIdentity && (
@@ -240,12 +369,6 @@ const createStyles = (colors: ThemeColors, insets: ReturnType<typeof useSafeArea
       width: '100%',
       maxWidth: 480,
     },
-    loadingContainer: {
-      flex: 1,
-      backgroundColor: colors.background,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
     container: {
       flex: 1,
       backgroundColor: colors.background,
@@ -256,6 +379,14 @@ const createStyles = (colors: ThemeColors, insets: ReturnType<typeof useSafeArea
       paddingTop: insets.top + spacing.xl,
       paddingBottom: insets.bottom,
       justifyContent: 'center',
+    },
+    recoveryContainer: {
+      flex: 1,
+      paddingHorizontal: spacing.lg,
+      paddingTop: insets.top + spacing.xl,
+      paddingBottom: insets.bottom + spacing.xl,
+      justifyContent: 'center',
+      alignItems: 'center',
     },
     iconContainer: {
       alignItems: 'center',
@@ -283,6 +414,108 @@ const createStyles = (colors: ThemeColors, insets: ReturnType<typeof useSafeArea
       marginBottom: spacing.xl,
       textAlign: 'center',
       lineHeight: 22,
+    },
+    recoveryTitle: {
+      ...typography.h2,
+      color: colors.text,
+      marginBottom: spacing.sm,
+      textAlign: 'center',
+    },
+    recoveryWarning: {
+      ...typography.caption,
+      color: colors.danger,
+      marginBottom: spacing.xl,
+      textAlign: 'center',
+      lineHeight: 20,
+      paddingHorizontal: spacing.md,
+      fontWeight: '500',
+    },
+    recoveryKeyBox: {
+      backgroundColor: colors.inputBackground,
+      borderWidth: 1,
+      borderColor: colors.accent,
+      borderRadius: radius.md,
+      padding: spacing.lg,
+      marginBottom: spacing.lg,
+      alignItems: 'center',
+      width: '100%',
+    },
+    recoveryKeyText: {
+      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+      fontSize: 18,
+      color: colors.text,
+      letterSpacing: 2,
+      textAlign: 'center',
+    },
+    copyBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.primary,
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.lg,
+      borderRadius: radius.md,
+      marginBottom: spacing.xl,
+      gap: spacing.xs,
+    },
+    copyBtnText: {
+      color: colors.textInverse,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    confirmRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: spacing.xl,
+      gap: spacing.md,
+    },
+    checkbox: {
+      width: 24,
+      height: 24,
+      borderRadius: radius.sm,
+      borderWidth: 2,
+      borderColor: colors.border,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    checkboxChecked: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    confirmText: {
+      ...typography.body,
+      color: colors.text,
+      flex: 1,
+    },
+    continueBtn: {
+      backgroundColor: colors.primary,
+      padding: spacing.md,
+      borderRadius: radius.md,
+      alignItems: 'center',
+      width: '100%',
+    },
+    continueBtnDisabled: {
+      opacity: 0.4,
+    },
+    continueBtnText: {
+      color: colors.textInverse,
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    biometricButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.accent,
+      padding: spacing.md,
+      borderRadius: radius.md,
+      marginBottom: spacing.md,
+      gap: spacing.sm,
+    },
+    biometricButtonText: {
+      color: colors.textInverse,
+      fontSize: 16,
+      fontWeight: '600',
     },
     input: {
       backgroundColor: colors.inputBackground,
@@ -316,14 +549,24 @@ const createStyles = (colors: ThemeColors, insets: ReturnType<typeof useSafeArea
       fontSize: 16,
       fontWeight: '600',
     },
-    resetButton: {
+    linkButton: {
       marginTop: spacing.md,
       padding: spacing.md,
       alignItems: 'center',
     },
+    linkButtonText: {
+      color: colors.primary,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    resetButton: {
+      marginTop: spacing.sm,
+      padding: spacing.sm,
+      alignItems: 'center',
+    },
     resetButtonText: {
       color: colors.danger,
-      fontSize: 14,
+      fontSize: 13,
       fontWeight: '500',
     },
     createButton: {

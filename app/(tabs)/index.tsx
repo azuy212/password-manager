@@ -3,8 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { appStore$ } from '@/store/appStore';
 import { useValue } from '@legendapp/state/react';
-import { getMasterKey } from '@/core/masterKeyStore';
-import { createVault, deleteVault } from '@/core/vault/vaultService';
+import { createVault, deleteVault, decryptVEKForOperation } from '@/core/vault/vaultService';
 import type { Vault } from '@/types/vault';
 import React, { useCallback, useMemo, useState } from 'react';
 import {
@@ -143,8 +142,9 @@ export default function VaultsScreen() {
   }, [modalScale, modalOpacity]);
 
   const handleSaveVault = useCallback(async () => {
-    const key = getMasterKey();
-    if (!newVaultName.trim() || !key) {
+    const vek = await decryptVEKForOperation();
+    if (!newVaultName.trim() || !vek) {
+      if (vek) vek.destroy();
       closeModal();
       return;
     }
@@ -156,7 +156,7 @@ export default function VaultsScreen() {
         {
           name: newVaultName.trim(),
         },
-        key
+        vek
       );
       closeModal();
     } catch {
@@ -164,6 +164,7 @@ export default function VaultsScreen() {
       closeModal();
     } finally {
       setIsCreatingVault(false);
+      vek.destroy();
     }
   }, [newVaultName, isCreatingVault, closeModal]);
 

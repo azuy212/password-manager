@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import { Alert, Platform } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { importCsv, createEntryKey } from '../core/import';
-import { getMasterKey } from '../core/masterKeyStore';
+import { getMasterKey } from '../core/keyStore';
 import { createEntry, decryptVaultKey, getEntriesForVault } from '../core/vault/vaultService';
 import { appStore$ } from '../store/appStore';
 import type { Vault } from '../types/vault';

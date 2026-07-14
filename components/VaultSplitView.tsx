@@ -1,8 +1,7 @@
 import { CopyableField } from '@/components/CopyableField';
 import { SyncStatusIndicator } from '@/components/SyncStatusIndicator';
 import { useCsvImport } from '@/hooks/useCsvImport';
-import { getMasterKey } from '@/core/masterKeyStore';
-import { createEntry, decryptVaultKey, deleteEntry, updateEntry } from '@/core/vault/vaultService';
+import { createEntry, decryptVaultKey, deleteEntry, updateEntry, decryptVEKForOperation } from '@/core/vault/vaultService';
 import { useTheme } from '@/hooks/useTheme';
 import { appStore$, getSyncState } from '@/store/appStore';
 import type { VaultEntry } from '@/types/vault';
@@ -120,22 +119,23 @@ export function VaultSplitView({
       Alert.alert('Error', 'Title and username are required');
       return;
     }
-    const key = getMasterKey();
-    if (!key) {
-      Alert.alert('Error', 'Master key not available');
+    const vek = await decryptVEKForOperation();
+    if (!vek) {
+      Alert.alert('Error', 'Cryptographic key not available');
       return;
     }
     if (isSaving) return;
 
     const vault = (vaults || []).find(v => v.id === vaultId);
     if (!vault) {
+      vek.destroy();
       Alert.alert('Error', 'Vault not found');
       return;
     }
 
     setIsSaving(true);
     try {
-      const vaultKey = await decryptVaultKey(vault.encryptedEncryptionKey, key);
+      const vaultKey = await decryptVaultKey(vault.encryptedEncryptionKey, vek);
       try {
         const input = {
           vaultId,
@@ -164,6 +164,7 @@ export function VaultSplitView({
       Alert.alert('Error', message);
     } finally {
       setIsSaving(false);
+      vek.destroy();
     }
   }, [formData, isSaving, selectedEntry, vaultId, onAddEntry]);
 

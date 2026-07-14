@@ -7,7 +7,7 @@ import { spacing, radius, typography } from '@/utils/themedStyles';
 import { WebLayout } from '@/components/WebLayout';
 import { appStore$ } from '@/store/appStore';
 import { useValue } from '@legendapp/state/react';
-import { getMasterKey } from '@/core/masterKeyStore';
+import { getMasterKey } from '@/core/keyStore';
 import { unwrapSharedEntryKey } from '@/core/sharing/sharingService';
 import { decryptString } from '@/core/crypto';
 import { supabase } from '@/services/supabaseClient';

@@ -17,8 +17,7 @@ import {
 import { ScrollView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { ThemeColors } from '../constants/Colors';
-import { createEntry, deleteEntry, getEntry, updateEntry, decryptVaultKey } from '../core/vault/vaultService';
-import { getMasterKey } from '../core/masterKeyStore';
+import { createEntry, deleteEntry, getEntry, updateEntry, decryptVaultKey, decryptVEKForOperation } from '../core/vault/vaultService';
 import { shareEntryWithECDH } from '../core/sharing/sharingService';
 import { appStore$ } from '../store/appStore';
 import { useValue } from '@legendapp/state/react';
@@ -63,14 +62,14 @@ export default function EntryScreen() {
   }, [params.entryId]);
 
   const loadEntry = useCallback(async () => {
-    const key = getMasterKey();
-    if (!params.entryId || !key) return;
+    const vek = await decryptVEKForOperation();
+    if (!params.entryId || !vek) return;
     setIsLoadingEntry(true);
     try {
       const vault = (vaults || []).find(v => v.id === params.vaultId);
       if (!vault) { setIsLoadingEntry(false); return; }
 
-      const vaultKey = await decryptVaultKey(vault.encryptedEncryptionKey, key);
+      const vaultKey = await decryptVaultKey(vault.encryptedEncryptionKey, vek);
       try {
         const entry = await getEntry(params.entryId as string, vaultKey);
         if (entry) {
@@ -87,6 +86,7 @@ export default function EntryScreen() {
       Alert.alert('Error', 'Failed to load entry');
     } finally {
       setIsLoadingEntry(false);
+      vek.destroy();
     }
   }, [params.entryId, params.vaultId, vaults]);
 
@@ -96,9 +96,9 @@ export default function EntryScreen() {
       return;
     }
 
-    const key = getMasterKey();
-    if (!key) {
-      Alert.alert('Error', 'Master key not available');
+    const vek = await decryptVEKForOperation();
+    if (!vek) {
+      Alert.alert('Error', 'Cryptographic key not available');
       return;
     }
 
@@ -112,7 +112,7 @@ export default function EntryScreen() {
         return;
       }
 
-      const vaultKey = await decryptVaultKey(vault.encryptedEncryptionKey, key);
+      const vaultKey = await decryptVaultKey(vault.encryptedEncryptionKey, vek);
       try {
         const input: VaultEntryInput = {
           vaultId: params.vaultId as string,
@@ -138,6 +138,7 @@ export default function EntryScreen() {
       Alert.alert('Error', message);
     } finally {
       setIsSaving(false);
+      vek.destroy();
     }
   }, [title, username, isSaving, params.vaultId, params.entryId, url, notes, password, router]);
 
@@ -171,8 +172,8 @@ export default function EntryScreen() {
   const handleShare = useCallback(async () => {
     if (!params.entryId || !shareEmail.trim()) return;
 
-    const key = getMasterKey();
-    if (!key) {
+    const vek = await decryptVEKForOperation();
+    if (!vek) {
       Alert.alert('Error', 'Not authenticated');
       return;
     }
@@ -182,7 +183,7 @@ export default function EntryScreen() {
       const vault = (vaults || []).find(v => v.id === params.vaultId);
       if (!vault) throw new Error('Vault not found');
 
-      const vaultKey = await decryptVaultKey(vault.encryptedEncryptionKey, key);
+      const vaultKey = await decryptVaultKey(vault.encryptedEncryptionKey, vek);
       try {
         const result = await shareEntryWithECDH(
           params.entryId,
@@ -206,6 +207,7 @@ export default function EntryScreen() {
       Alert.alert('Error', message);
     } finally {
       setIsSharing(false);
+      vek.destroy();
     }
   }, [params.entryId, params.vaultId, shareEmail, vaults]);
 
