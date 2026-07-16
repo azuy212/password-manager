@@ -96,15 +96,22 @@ export function validateRecoveryKeyFormat(input: string): boolean {
   return parseRecoveryKey(input) !== null;
 }
 
+async function deriveAESKey(recoveryBytes: number[]): Promise<number[]> {
+  const zeroKey = new Array(32).fill(0);
+  return await CryptoNative.hmacSha256(recoveryBytes, zeroKey);
+}
+
 /**
  * Encrypt VEK with recovery key bytes.
+ * Derives AES-256 key via HMAC-SHA256 for AES-GCM compatibility.
  * Returns JSON-encrypted string suitable for cloud storage.
  */
 export async function encryptVEKWithRecoveryKey(
   vekBytes: number[],
   recoveryBytes: number[]
 ): Promise<string> {
-  const recoveryKey = new SecureKey(recoveryBytes);
+  const aesKey = await deriveAESKey(recoveryBytes);
+  const recoveryKey = new SecureKey(aesKey);
   try {
     return await encryptBytes(vekBytes, recoveryKey);
   } finally {
@@ -120,7 +127,8 @@ export async function decryptVEKWithRecoveryKey(
   encryptedVEK: string,
   recoveryBytes: number[]
 ): Promise<number[] | null> {
-  const recoveryKey = new SecureKey(recoveryBytes);
+  const aesKey = await deriveAESKey(recoveryBytes);
+  const recoveryKey = new SecureKey(aesKey);
   try {
     return await decryptBytes(encryptedVEK, recoveryKey);
   } catch {

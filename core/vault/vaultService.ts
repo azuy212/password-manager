@@ -93,12 +93,17 @@ export async function getVaults(): Promise<Vault[]> {
  * Uses VEK to encrypt the vault's DEK.
  */
 export async function createVault(input: VaultInput, vek: SecureKey): Promise<Vault> {
+  const userId = appStore$.userId.peek();
+  if (!userId) {
+    throw new Error('Cannot create vault: user not authenticated. Please unlock the app first.');
+  }
+
   const vaultKeyBytes = await generateRandomBytes(32);
   const encryptedEncryptionKey = await encryptBytes(vaultKeyBytes, vek);
 
   const newVault: Vault = {
     id: uuidv4(),
-    userId: appStore$.userId.peek() ?? '',
+    userId,
     name: input.name,
     encryptedEncryptionKey,
     version: 1,

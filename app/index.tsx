@@ -110,13 +110,12 @@ export default function UnlockScreen() {
         return;
       }
 
-      const { passwordKey, supabaseUserId } = result;
+      const { supabaseUserId } = result;
       const identity = await getIdentity();
       if (identity) {
         appActions.setIdentity(identity);
       }
       appActions.setUserId(supabaseUserId);
-      appActions.setPasswordKey(passwordKey);
       appActions.setAuthenticated(true);
       router.replace('/(tabs)');
     } catch (err: any) {
@@ -343,14 +342,14 @@ export default function UnlockScreen() {
           <Text style={styles.resetButtonText}>Reset Vault</Text>
         </TouchableOpacity>
 
-        {!hasIdentity && (
-          <TouchableOpacity
-            style={styles.createButton}
-            onPress={() => router.push('/setup')}
-          >
-            <Text style={styles.createButtonText}>New? Create Account</Text>
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity
+          style={styles.createButton}
+          onPress={() => router.push('/setup')}
+        >
+          <Text style={styles.createButtonText}>
+            {hasIdentity ? 'Create New Account' : 'New? Create Account'}
+          </Text>
+        </TouchableOpacity>
       </Animated.View>
       </KeyboardAvoidingView>
     </View>

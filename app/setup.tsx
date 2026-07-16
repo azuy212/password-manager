@@ -15,6 +15,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { createIdentity } from '../core/auth/identityService';
+import { setCachedEncryptedVEK } from '../core/keyStore';
 import { appActions, appStore$ } from '../store/appStore';
 import { useValue } from '@legendapp/state/react';
 import { useTheme } from '../hooks/useTheme';
@@ -31,7 +32,7 @@ export default function SetupScreen() {
   const [showRecoveryKey, setShowRecoveryKey] = useState(false);
   const [recoveryKey, setRecoveryKey] = useState<string | null>(null);
   const [recoveryConfirmed, setRecoveryConfirmed] = useState(false);
-  const [pendingIdentity, setPendingIdentity] = useState<{ identity: any; passwordKey: any; supabaseUserId: string } | null>(null);
+  const [pendingIdentity, setPendingIdentity] = useState<{ identity: any; passwordKey: any; supabaseUserId: string; encryptedVEKPassword: string } | null>(null);
   const router = useRouter();
   const colors = useTheme();
   const insets = useSafeAreaInsets();
@@ -79,11 +80,11 @@ export default function SetupScreen() {
         Alert.alert('Error', result.error);
         return;
       }
-      const { identity, passwordKey, supabaseUserId, recoveryKey } = result;
+      const { identity, passwordKey, supabaseUserId, recoveryKey, encryptedVEKPassword } = result;
 
       // Show recovery key before proceeding
       setRecoveryKey(recoveryKey);
-      setPendingIdentity({ identity, passwordKey, supabaseUserId });
+      setPendingIdentity({ identity, passwordKey, supabaseUserId, encryptedVEKPassword });
       setShowRecoveryKey(true);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Failed to create vault';
@@ -96,10 +97,11 @@ export default function SetupScreen() {
 
   const handleRecoveryConfirmed = useCallback(async () => {
     if (!pendingIdentity) return;
-    const { identity, passwordKey, supabaseUserId } = pendingIdentity;
+    const { identity, passwordKey, supabaseUserId, encryptedVEKPassword } = pendingIdentity;
 
     appActions.setIdentity(identity);
     appActions.setPasswordKey(passwordKey);
+    setCachedEncryptedVEK(encryptedVEKPassword);
     appActions.setUserId(supabaseUserId);
     appActions.setAuthenticated(true);
 
@@ -206,15 +208,15 @@ export default function SetupScreen() {
           placeholderTextColor={colors.placeholder}
           secureTextEntry
           autoCapitalize="none"
-          textContentType="none"
           autoComplete="off"
+          importantForAutofill="no"
           value={password}
           onChangeText={setPassword}
           ref={passwordRef}
           autoFocus
           returnKeyType="next"
           blurOnSubmit={false}
-          onSubmitEditing={() => setTimeout(() => confirmPasswordRef.current?.focus(), 50)}
+          onSubmitEditing={() => confirmPasswordRef.current?.focus()}
         />
 
         <TextInput

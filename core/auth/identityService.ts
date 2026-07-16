@@ -30,6 +30,7 @@ export interface CreateIdentityResult {
   identity: Identity;
   passwordKey: SecureKey;
   supabaseUserId: string;
+  encryptedVEKPassword: string;
 }
 
 export interface MigrationResult {
@@ -112,6 +113,7 @@ export async function createIdentity(
     passwordKey,
     supabaseUserId: authResult.userId!,
     recoveryKey: recoveryKeyFormatted,
+    encryptedVEKPassword,
   };
 }
 

@@ -141,13 +141,14 @@ syncObservable(
         deletedAt:             msOpt(row.deleted_at),
       }),
       save: (vault: Vault | Vault[]): any => {
+        const userId = appStore$.userId.peek();
+        if (!userId) throw new Error('Cannot sync vault: user not authenticated');
         if (Array.isArray(vault)) {
           return vault.map(v => ({
             id:                       v.id,
-            user_id:                  appStore$.userId.peek() ?? '',
+            user_id:                  userId,
             name:                     v.name,
             encrypted_encryption_key: v.encryptedEncryptionKey,
-            version:                  v.version ?? 1,
             created_at:               v.createdAt ? new Date(v.createdAt).toISOString() : new Date(0).toISOString(),
             updated_at:               new Date().toISOString(),
             deleted_at:               iso(v.deletedAt),
@@ -156,10 +157,9 @@ syncObservable(
         const v = vault as Vault;
         return {
           id:                       v.id,
-          user_id:                  appStore$.userId.peek() ?? '',
+          user_id:                  userId,
           name:                     v.name,
           encrypted_encryption_key: v.encryptedEncryptionKey,
-          version:                  v.version ?? 1,
           created_at:               v.createdAt ? new Date(v.createdAt).toISOString() : new Date(0).toISOString(),
           updated_at:               new Date().toISOString(),
           deleted_at:               iso(v.deletedAt),
@@ -178,12 +178,11 @@ syncObservable(
     persist: { name: 'entries', retrySync: true },
     initial: {},
     filter: (query) => {
-      const activeVaultId = appStore$.activeVaultId.peek();
-      return activeVaultId
-        ? (query as any).eq('vault_id', activeVaultId)
-        : (query as any).eq('vault_id', 'none');
+      const userId = appStore$.userId.peek();
+      // No vault_id filter needed — RLS restricts entries to user's vaults via vaults join
+      return userId ? query : (query as any).eq('vault_id', 'none');
     },
-    waitFor: () => appStore$.activeVaultId.get() && appStore$.userId.get(),
+    waitFor: appStore$.userId,
     transform: {
       load: (row: VaultEntryRow): VaultEntry => ({
         id:               row.id,
@@ -203,7 +202,6 @@ syncObservable(
               id:                e.id,
               vault_id:          e.vaultId,
               encrypted_payload: e.encryptedPayload,
-              version:           e.version ?? 1,
               created_at:        e.createdAt ? new Date(e.createdAt).toISOString() : new Date(0).toISOString(),
               updated_at:        new Date().toISOString(),
               deleted_at:        iso(e.deletedAt),
@@ -216,7 +214,6 @@ syncObservable(
           id:                e.id,
           vault_id:          e.vaultId,
           encrypted_payload: e.encryptedPayload,
-          version:           e.version ?? 1,
           created_at:        e.createdAt ? new Date(e.createdAt).toISOString() : new Date(0).toISOString(),
           updated_at:        new Date().toISOString(),
           deleted_at:        iso(e.deletedAt),

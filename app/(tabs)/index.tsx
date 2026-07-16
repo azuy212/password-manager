@@ -142,9 +142,13 @@ export default function VaultsScreen() {
   }, [modalScale, modalOpacity]);
 
   const handleSaveVault = useCallback(async () => {
+    if (!newVaultName.trim()) {
+      closeModal();
+      return;
+    }
     const vek = await decryptVEKForOperation();
-    if (!newVaultName.trim() || !vek) {
-      if (vek) vek.destroy();
+    if (!vek) {
+      Alert.alert('Error', 'Session expired. Please unlock the app first.');
       closeModal();
       return;
     }
@@ -159,8 +163,8 @@ export default function VaultsScreen() {
         vek
       );
       closeModal();
-    } catch {
-      Alert.alert('Error', 'Failed to create vault');
+    } catch (e) {
+      Alert.alert('Error', 'Failed to create vault: ' + (e instanceof Error ? e.message : String(e)));
       closeModal();
     } finally {
       setIsCreatingVault(false);

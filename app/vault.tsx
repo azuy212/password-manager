@@ -44,7 +44,9 @@ export default function VaultScreen() {
 
   const isSyncing = !!(vaultsSync.isGetting || entriesSync.isGetting);
   const lastSyncedAt = Math.max(vaultsSync.lastSync || 0, entriesSync.lastSync || 0);
-  const syncError = vaultsSync.error ? 'Vaults sync error' : entriesSync.error ? 'Entries sync error' : null;
+  const vaultsSyncError = vaultsSync.error;
+  const entriesSyncError = entriesSync.error;
+  const syncError = vaultsSyncError ? `${vaultsSyncError}` : entriesSyncError ? `${entriesSyncError}` : null;
 
   const colors = useTheme();
   const insets = useSafeAreaInsets();
@@ -121,8 +123,7 @@ export default function VaultScreen() {
       ]);
 
       await loadEntries();
-    } catch (error) {
-      console.error(error);
+    } catch {
       Alert.alert("Sync Failed", "Unable to sync your vault.");
     } finally {
       setRefreshing(false);

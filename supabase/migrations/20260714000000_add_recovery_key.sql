@@ -8,11 +8,11 @@ ALTER TABLE users
 
 -- Restrict column grants to include new columns
 REVOKE ALL ON users FROM authenticated;
-GRANT SELECT (id, email, public_key, encrypted_vek_password,
+GRANT SELECT (id, email, public_key, salt, encrypted_vek_password,
               encrypted_vek_recovery, crypto_version,
               created_at, updated_at)
   ON users TO authenticated;
-GRANT INSERT (id, email, public_key, salt,
+GRANT INSERT (id, email, public_key, salt, x25519_public_key,
               encrypted_vek_password, encrypted_vek_recovery,
               crypto_version, created_at, updated_at)
   ON users TO authenticated;
