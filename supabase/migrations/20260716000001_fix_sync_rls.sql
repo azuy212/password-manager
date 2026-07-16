@@ -48,7 +48,7 @@ GRANT INSERT (id, email, public_key, salt, x25519_public_key,
               encrypted_vek_password, encrypted_vek_recovery,
               crypto_version, created_at, updated_at)
   ON users TO authenticated;
-GRANT UPDATE (email, public_key, encrypted_vek_password,
+GRANT UPDATE (email, public_key, salt, encrypted_vek_password,
               encrypted_vek_recovery, crypto_version, x25519_public_key,
               updated_at)
   ON users TO authenticated;

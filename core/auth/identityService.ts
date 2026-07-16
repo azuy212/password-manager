@@ -400,13 +400,22 @@ export async function changePasswordWithRecoveryKey(
   }
 
   // Update users row
-  await supabase.from('users').update({
+  const { error: updateError } = await supabase.from('users').update({
     salt: JSON.stringify(newSalt),
     encrypted_vek_password: newEncryptedVEKPassword,
   } as any).eq('id', session.user.id);
 
+  if (updateError) {
+    vek.destroy();
+    return { error: `Failed to update profile: ${updateError.message}` };
+  }
+
   // Also update Supabase Auth password
-  await (await import('../../services/supabaseClient')).supabase.auth.updateUser({ password: newPassword }).catch(() => {});
+  const { error: authUpdateError } = await supabase.auth.updateUser({ password: newPassword });
+  if (authUpdateError) {
+    vek.destroy();
+    return { error: `Failed to update authentication: ${authUpdateError.message}` };
+  }
 
   vek.destroy();
 

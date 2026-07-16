@@ -15,7 +15,6 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { changePasswordWithRecoveryKey } from '../core/auth/identityService';
-import { supabaseSignIn } from '../core/auth/supabaseAuthService';
 import { useTheme } from '../hooks/useTheme';
 import { useIsDesktop } from '../hooks/useBreakpoint';
 import { spacing, radius, typography } from '../utils/themedStyles';
@@ -79,18 +78,8 @@ export default function ForgotPasswordScreen() {
 
     setIsSubmitting(true);
     try {
-      // Sign in to Supabase (needed to fetch encrypted VEK from cloud)
-      const signInResult = await supabaseSignIn(email, '');
-      if (signInResult.success) {
-        // User has an account
-      }
-
-      // Try decrypting - if format is valid, move to password step
-      // The actual decryption happens on submit
       setRecoveryVerified(true);
       setStep('new-password');
-    } catch {
-      Alert.alert('Error', 'Unable to verify Recovery Key. Please check and try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -109,12 +98,6 @@ export default function ForgotPasswordScreen() {
 
     setIsSubmitting(true);
     try {
-      // Attempt sign in with email (password is empty since we're recovering)
-      const signInResult = await supabaseSignIn(email, '');
-      if (!signInResult.success) {
-        // Try to get session another way - maybe user is already signed in
-      }
-
       const result = await changePasswordWithRecoveryKey(recoveryKeyInput, newPassword);
       if ('error' in result) {
         Alert.alert('Error', result.error);
@@ -127,7 +110,7 @@ export default function ForgotPasswordScreen() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [email, recoveryKeyInput, newPassword, confirmPassword, router]);
+  }, [recoveryKeyInput, newPassword, confirmPassword, router]);
 
   const handleBackToUnlock = useCallback(() => {
     router.replace('/');

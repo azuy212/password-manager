@@ -68,7 +68,6 @@ export function useUnlock(): UseUnlockReturn {
 
     const localIdentity = await getIdentity();
     if (localIdentity) {
-      // Fetch cloud profile for VEK metadata
       const profile = await fetchUserProfile(supabaseUserId);
       if ('error' in profile) {
         return { error: profile.error };
@@ -94,20 +93,15 @@ export function useUnlock(): UseUnlockReturn {
 
       // Standard v2 unlock
       const unlockResult = await unlockIdentity(password, profile.encryptedVEKPassword);
-      if (!unlockResult) {
-        await supabaseSignIn('', '').catch(() => {});
-        return { error: 'Wrong password or account locked.' };
+      if (unlockResult && !('error' in unlockResult)) {
+        // Local identity succeeded
+        setPasswordKey(unlockResult.passwordKey);
+        setCachedEncryptedVEK(unlockResult.encryptedVEKPassword);
+        setIsUnlocked(true);
+        return { passwordKey: unlockResult.passwordKey, supabaseUserId };
       }
-      if ('error' in unlockResult) {
-        return { error: unlockResult.error };
-      }
-
-      // Cache
-      setPasswordKey(unlockResult.passwordKey);
-      setCachedEncryptedVEK(unlockResult.encryptedVEKPassword);
-
-      setIsUnlocked(true);
-      return { passwordKey: unlockResult.passwordKey, supabaseUserId };
+      // Local identity failed (e.g. stale salt after password change on another device).
+      // Fall through to bootstrap path, which uses cloud salt + cloud encryptedVEK.
     }
 
     // Second device — bootstrap from cloud
@@ -118,7 +112,6 @@ export function useUnlock(): UseUnlockReturn {
     if (!profile.encryptedVEKPassword) {
       return { error: 'Vault not initialized with VEK. Please use your primary device first.' };
     }
-
     const bootstrapResult = await bootstrapIdentityFromCloud(
       password,
       profile.salt,
@@ -132,7 +125,6 @@ export function useUnlock(): UseUnlockReturn {
 
     setPasswordKey(bootstrapResult.passwordKey);
     setCachedEncryptedVEK(profile.encryptedVEKPassword);
-
     setIsUnlocked(true);
     return { passwordKey: bootstrapResult.passwordKey, supabaseUserId };
   }, []);

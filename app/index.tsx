@@ -94,7 +94,6 @@ export default function UnlockScreen() {
       }
 
       if (result.needsMigration && result.migrationWaiting) {
-        // Migration happened — re-run unlock to get keys
         const reResult = await unlock(email, password);
         if ('error' in reResult) {
           Alert.alert('Error', reResult.error);
