@@ -1,4 +1,4 @@
-import CryptoNative from 'crypto-native';
+import { cryptoProvider } from '../platform/crypto';
 
 // OWASP 2023 recommended minimum for PBKDF2-SHA256
 const PBKDF2_ITERATIONS = 600000;
@@ -35,8 +35,8 @@ export class SecureKey {
  * Derive a master key from a password using PBKDF2-SHA256
  */
 export async function deriveMasterKey(password: string, salt?: number[]): Promise<{ key: SecureKey; salt: number[] }> {
-  const saltBytes = salt || await CryptoNative.generateSalt(SALT_LENGTH);
-  const keyBytes = await CryptoNative.deriveKey(password, saltBytes, PBKDF2_ITERATIONS, KEY_LENGTH);
+  const saltBytes = salt || await cryptoProvider.generateSalt(SALT_LENGTH);
+  const keyBytes = await cryptoProvider.deriveKey(password, saltBytes, PBKDF2_ITERATIONS, KEY_LENGTH);
   return { key: new SecureKey(keyBytes), salt: saltBytes };
 }
 
@@ -44,14 +44,14 @@ export async function deriveMasterKey(password: string, salt?: number[]): Promis
  * Generate random bytes
  */
 export async function generateRandomBytes(length: number): Promise<number[]> {
-  return CryptoNative.generateRandomBytes(length);
+  return cryptoProvider.generateRandomBytes(length);
 }
 
 /**
  * Generate a salt
  */
 export async function generateSalt(length: number = SALT_LENGTH): Promise<number[]> {
-  return CryptoNative.generateSalt(length);
+  return cryptoProvider.generateSalt(length);
 }
 
 export { PBKDF2_ITERATIONS, KEY_LENGTH, SALT_LENGTH };

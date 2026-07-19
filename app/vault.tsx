@@ -20,7 +20,7 @@ import { VaultSplitView } from '../components/VaultSplitView';
 import { WebLayout } from '../components/WebLayout';
 import type { ThemeColors } from '../constants/Colors';
 import { useCsvImport } from '../hooks/useCsvImport';
-import { decryptVaultKey, getEntriesForVault, decryptVEKForOperation } from '../core/vault/vaultService';
+import { decryptVaultKey, decryptVEKForOperation, vaultService } from '../core/vault/vaultService';
 import { useIsDesktop } from '../hooks/useBreakpoint';
 import { useEntrySearch } from '../hooks/useEntrySearch';
 import { useTheme } from '../hooks/useTheme';
@@ -69,7 +69,7 @@ export default function VaultScreen() {
 
     setIsLoading(true);
     try {
-      const data = await getEntriesForVault(params.vaultId as string, vaultKey);
+      const data = await vaultService.getEntriesForVault(params.vaultId as string, vaultKey);
       setEntries(data);
     } catch {
       Alert.alert('Error', 'Failed to load entries');

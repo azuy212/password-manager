@@ -17,7 +17,7 @@ import {
 import { ScrollView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { ThemeColors } from '../constants/Colors';
-import { createEntry, deleteEntry, getEntry, updateEntry, decryptVaultKey, decryptVEKForOperation } from '../core/vault/vaultService';
+import { decryptVaultKey, decryptVEKForOperation, vaultService } from '../core/vault/vaultService';
 import { shareEntryWithECDH } from '../core/sharing/sharingService';
 import { appStore$ } from '../store/appStore';
 import { useValue } from '@legendapp/state/react';
@@ -71,7 +71,7 @@ export default function EntryScreen() {
 
       const vaultKey = await decryptVaultKey(vault.encryptedEncryptionKey, vek);
       try {
-        const entry = await getEntry(params.entryId as string, vaultKey);
+        const entry = await vaultService.getEntry(params.entryId as string, vaultKey);
         if (entry) {
           setTitle(entry.title);
           setUsername(entry.username);
@@ -124,9 +124,9 @@ export default function EntryScreen() {
         };
 
         if (params.entryId) {
-          await updateEntry(params.entryId, input, vaultKey);
+          await vaultService.updateEntry(params.entryId, input, vaultKey);
         } else {
-          await createEntry(input, vaultKey);
+          await vaultService.createEntry(input, vaultKey);
         }
       } finally {
         vaultKey.destroy();
@@ -156,7 +156,7 @@ export default function EntryScreen() {
           onPress: async () => {
             setIsDeleting(true);
             try {
-              await deleteEntry(params.entryId as string);
+              await vaultService.deleteEntry(params.entryId as string);
               router.back();
             } catch {
               Alert.alert('Error', 'Failed to delete entry');

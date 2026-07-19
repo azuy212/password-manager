@@ -1,7 +1,7 @@
 import { CopyableField } from '@/components/CopyableField';
 import { SyncStatusIndicator } from '@/components/SyncStatusIndicator';
 import { useCsvImport } from '@/hooks/useCsvImport';
-import { createEntry, decryptVaultKey, deleteEntry, updateEntry, decryptVEKForOperation } from '@/core/vault/vaultService';
+import { decryptVaultKey, decryptVEKForOperation, vaultService } from '@/core/vault/vaultService';
 import { useTheme } from '@/hooks/useTheme';
 import { appStore$, getSyncState } from '@/store/appStore';
 import type { VaultEntry } from '@/types/vault';
@@ -147,9 +147,9 @@ export function VaultSplitView({
         };
 
         if (selectedEntry) {
-          await updateEntry(selectedEntry.id, input, vaultKey);
+          await vaultService.updateEntry(selectedEntry.id, input, vaultKey);
         } else {
-          await createEntry(input, vaultKey);
+          await vaultService.createEntry(input, vaultKey);
         }
       } finally {
         vaultKey.destroy();
@@ -181,7 +181,7 @@ export function VaultSplitView({
           onPress: async () => {
             setIsDeleting(true);
             try {
-              await deleteEntry(selectedEntry.id);
+              await vaultService.deleteEntry(selectedEntry.id);
               setSelectedEntry(null);
               setIsEditing(false);
               onAddEntry();

@@ -1,4 +1,4 @@
-import CryptoNative from 'crypto-native';
+import { cryptoProvider } from '../platform/crypto';
 import { SecureKey } from './deriveMasterKey';
 import { stringToBytes, bytesToString } from '@/utils/encoding';
 
@@ -10,7 +10,7 @@ export async function encrypt(data: number[], key: SecureKey): Promise<{
   nonce: number[];
   tag: number[];
 }> {
-  return CryptoNative.encrypt(data, key.toArray());
+  return cryptoProvider.encrypt(data, key.toArray());
 }
 
 /**
@@ -23,7 +23,7 @@ export async function decrypt(
   nonce: number[],
   tag: number[]
 ): Promise<number[]> {
-  return CryptoNative.decrypt(ciphertext, key.toArray(), nonce, tag);
+  return cryptoProvider.decrypt(ciphertext, key.toArray(), nonce, tag);
 }
 
 /**
