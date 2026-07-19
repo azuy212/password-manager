@@ -12,11 +12,13 @@ type View =
 
 export function App() {
   const [view, setView] = useState<View>({ type: 'loading' })
+  const [lastSession, setLastSession] = useState<{ userId: string; email: string } | null>(null)
 
   useEffect(() => {
     sendMessage<{ session: { userId: string; email: string } | null }>({ type: 'GET_SESSION' })
       .then((res) => {
         if (res.session) {
+          setLastSession(res.session)
           setView({ type: 'unlock', userId: res.session.userId, email: res.session.email })
         } else {
           setView({ type: 'sign-in' })
@@ -26,16 +28,26 @@ export function App() {
   }, [])
 
   const handleSignInSuccess = useCallback((userId: string, email: string) => {
+    setLastSession({ userId, email })
     setView({ type: 'unlock', userId, email })
   }, [])
 
   const handleUnlocked = useCallback((userId: string, email: string) => {
+    setLastSession({ userId, email })
     setView({ type: 'vault', userId, email })
   }, [])
 
   const handleSignOut = useCallback(() => {
     setView({ type: 'sign-in' })
   }, [])
+
+  const handleLock = useCallback(() => {
+    if (lastSession) {
+      setView({ type: 'unlock', ...lastSession })
+    } else {
+      setView({ type: 'sign-in' })
+    }
+  }, [lastSession])
 
   switch (view.type) {
     case 'loading':
@@ -55,7 +67,14 @@ export function App() {
       )
 
     case 'vault':
-      return <VaultView email={view.email} onSignOut={handleSignOut} />
+      return (
+        <VaultView
+          email={view.email}
+          userId={view.userId}
+          onSignOut={handleSignOut}
+          onLock={handleLock}
+        />
+      )
 
     default:
       return <div style={styles.container}>Unknown state</div>
