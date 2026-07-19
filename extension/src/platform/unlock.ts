@@ -9,14 +9,45 @@ const SALT_LENGTH = 32
 let _passwordKey: SecureKey | null = null
 let _encryptedVEK: string | null = null
 
+const SESSION_PW_KEY = 'pm_password_key'
+const SESSION_EVEK = 'pm_encrypted_vek'
+
 export function getPasswordKey(): SecureKey | null {
   return _passwordKey
 }
 
-export function destroyAll(): void {
+export function getEncryptedVEK(): string | null {
+  return _encryptedVEK
+}
+
+export async function destroyAll(): Promise<void> {
   _passwordKey?.destroy()
   _passwordKey = null
   _encryptedVEK = null
+  await chrome.storage.session.remove([SESSION_PW_KEY, SESSION_EVEK])
+}
+
+export async function persistUnlock(): Promise<void> {
+  if (!_passwordKey || !_encryptedVEK) return
+  await chrome.storage.session.set({
+    [SESSION_PW_KEY]: _passwordKey.toArray(),
+    [SESSION_EVEK]: _encryptedVEK,
+  })
+}
+
+export async function hasCachedUnlock(): Promise<boolean> {
+  const data = await chrome.storage.session.get(SESSION_PW_KEY)
+  return !!data[SESSION_PW_KEY]
+}
+
+export async function restoreCachedUnlock(): Promise<boolean> {
+  const data = await chrome.storage.session.get([SESSION_PW_KEY, SESSION_EVEK])
+  const pwBytes: number[] | undefined = data[SESSION_PW_KEY]
+  const encryptedVEK: string | undefined = data[SESSION_EVEK]
+  if (!pwBytes || !encryptedVEK) return false
+  _passwordKey = new SecureKey(pwBytes)
+  _encryptedVEK = encryptedVEK
+  return true
 }
 
 export async function decryptVEK(): Promise<SecureKey | null> {
@@ -83,7 +114,7 @@ export async function unlockVault(
   userId: string,
   password: string,
 ): Promise<{ success: true } | { error: string }> {
-  destroyAll()
+  await destroyAll()
 
   const profile = await fetchUserProfile(userId)
   if ('error' in profile) {
@@ -101,6 +132,7 @@ export async function unlockVault(
     const vek = new SecureKey(vekBytes)
     _passwordKey = passwordKey
     _encryptedVEK = profile.encryptedVEKPassword
+    await persistUnlock()
     vek.destroy()
     return { success: true }
   } catch {

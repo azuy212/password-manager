@@ -5,6 +5,8 @@ import {
   type SignInMessage,
   type SignOutMessage,
   type GetSessionMessage,
+  type GetActiveTabMessage,
+  type ActiveTabResponse,
 } from '../src/messageTypes'
 
 export function sendMessage<T>(message: unknown): Promise<T> {
@@ -21,6 +23,12 @@ export function sendSignIn(email: string, password: string) {
 
 export function sendSignOut() {
   return sendMessage<{ success: boolean }>({ type: MessageType.SIGN_OUT } satisfies SignOutMessage)
+}
+
+export function sendGetActiveTab() {
+  return sendMessage<ActiveTabResponse | null>(
+    { type: MessageType.GET_ACTIVE_TAB } satisfies GetActiveTabMessage,
+  )
 }
 
 export function sendGetSession() {

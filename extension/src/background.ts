@@ -90,7 +90,9 @@ chrome.runtime.onMessage.addListener(
   (message: Message, _sender, sendResponse) => {
     switch (message.type) {
       case MessageType.SIGN_IN:
-        handleSignIn(message.email, message.password).then(sendResponse)
+        handleSignIn(message.email, message.password)
+          .then(sendResponse)
+          .catch(() => sendResponse({ success: false, error: 'Service worker cold start' }))
         return true
 
       case MessageType.SIGN_OUT:
@@ -98,7 +100,7 @@ chrome.runtime.onMessage.addListener(
         return true
 
       case MessageType.GET_SESSION:
-        handleGetSession().then(sendResponse)
+        handleGetSession().then(sendResponse).catch(() => sendResponse({ session: null }))
         return true
 
       case MessageType.GET_ACTIVE_TAB:

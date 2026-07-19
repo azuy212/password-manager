@@ -1,5 +1,6 @@
 import React, { useEffect, useReducer } from 'react'
 import { sendGetSession } from './messaging'
+import { hasCachedUnlock, restoreCachedUnlock } from '../src/platform/unlock'
 import { SignInView } from './views/SignInView'
 import { UnlockView } from './views/UnlockView'
 import { VaultView } from './views/VaultView'
@@ -14,12 +15,18 @@ type Action =
   | { type: 'SESSION_FOUND'; userId: string; email: string }
   | { type: 'NO_SESSION' }
   | { type: 'SIGNED_IN'; userId: string; email: string }
+  | { type: 'UNLOCKED'; userId: string; email: string }
   | { type: 'SIGNED_OUT' }
   | { type: 'LOCKED'; userId: string; email: string }
+  | { type: 'SKIP_UNLOCK'; userId: string; email: string }
 
 function reducer(_state: View, action: Action): View {
   switch (action.type) {
     case 'SESSION_FOUND':
+      return { type: 'unlock', userId: action.userId, email: action.email }
+    case 'SKIP_UNLOCK':
+    case 'UNLOCKED':
+      return { type: 'vault', userId: action.userId, email: action.email }
     case 'SIGNED_IN':
       return { type: 'unlock', userId: action.userId, email: action.email }
     case 'NO_SESSION':
@@ -34,15 +41,30 @@ export function App() {
   const [view, dispatch] = useReducer(reducer, { type: 'loading' } satisfies View)
 
   useEffect(() => {
-    sendGetSession()
-      .then((res) => {
-        if (res.session) {
-          dispatch({ type: 'SESSION_FOUND', userId: res.session.userId, email: res.session.email })
-        } else {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await sendGetSession()
+        if (cancelled) return
+        if (!res?.session) {
           dispatch({ type: 'NO_SESSION' })
+          return
         }
-      })
-      .catch(() => dispatch({ type: 'NO_SESSION' }))
+        const { userId, email } = res.session
+        const cached = await hasCachedUnlock()
+        if (cached) {
+          const restored = await restoreCachedUnlock()
+          if (restored) {
+            dispatch({ type: 'SKIP_UNLOCK', userId, email })
+            return
+          }
+        }
+        dispatch({ type: 'SESSION_FOUND', userId, email })
+      } catch {
+        if (!cancelled) dispatch({ type: 'NO_SESSION' })
+      }
+    })()
+    return () => { cancelled = true }
   }, [])
 
   switch (view.type) {
@@ -61,7 +83,7 @@ export function App() {
         <UnlockView
           userId={view.userId}
           email={view.email}
-          onUnlocked={() => dispatch({ type: 'SIGNED_IN', userId: view.userId, email: view.email })}
+          onUnlocked={() => dispatch({ type: 'UNLOCKED', userId: view.userId, email: view.email })}
           onSignOut={() => dispatch({ type: 'SIGNED_OUT' })}
         />
       )
