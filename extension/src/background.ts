@@ -1,4 +1,5 @@
 import { supabase } from './platform/network'
+import type { PostgrestSingleResponse } from '@supabase/supabase-js'
 
 interface SignInMessage {
   type: 'SIGN_IN'
@@ -18,7 +19,28 @@ interface GetActiveTabMessage {
   type: 'GET_ACTIVE_TAB'
 }
 
-type Message = SignInMessage | SignOutMessage | GetSessionMessage | GetActiveTabMessage
+interface SupabaseQueryMessage {
+  type: 'SUPABASE_QUERY'
+  table: 'identities' | 'vaults' | 'vault_entries'
+  select?: string
+  filters?: Record<string, unknown>
+  single?: boolean
+}
+
+interface SupabaseUpsertMessage {
+  type: 'SUPABASE_UPSERT'
+  table: 'identities' | 'vaults' | 'vault_entries'
+  values: Record<string, unknown>
+  onConflict?: string
+}
+
+type Message =
+  | SignInMessage
+  | SignOutMessage
+  | GetSessionMessage
+  | GetActiveTabMessage
+  | SupabaseQueryMessage
+  | SupabaseUpsertMessage
 
 interface SignInResponse {
   success: boolean
@@ -35,6 +57,32 @@ interface ActiveTabResponse {
   url: string
   host: string
   title: string
+}
+
+function handleResponse<T>(res: PostgrestSingleResponse<T>) {
+  if (res.error) throw new Error(res.error.message)
+  return res.data
+}
+
+async function handleSupabaseQuery(table: string, select?: string, filters?: Record<string, unknown>, single?: boolean) {
+  let query = supabase.from(table as never).select(select ?? '*')
+  if (filters) {
+    for (const [key, value] of Object.entries(filters)) {
+      query = query.eq(key, value as never)
+    }
+  }
+  if (single) {
+    query = query.single() as typeof query
+  }
+  return handleResponse(await query)
+}
+
+async function handleSupabaseUpsert(table: string, values: Record<string, unknown>, onConflict?: string) {
+  let query = supabase.from(table as never).upsert(values as never)
+  if (onConflict) {
+    query = query.onConflict(onConflict)
+  }
+  return handleResponse(await query.select().single())
 }
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -104,6 +152,18 @@ chrome.runtime.onMessage.addListener(
         handleGetActiveTab().then(sendResponse)
         return true
 
+      case 'SUPABASE_QUERY':
+        handleSupabaseQuery(message.table, message.select, message.filters, message.single)
+          .then(data => sendResponse({ data }))
+          .catch(err => sendResponse({ error: err.message }))
+        return true
+
+      case 'SUPABASE_UPSERT':
+        handleSupabaseUpsert(message.table, message.values, message.onConflict)
+          .then(data => sendResponse({ data }))
+          .catch(err => sendResponse({ error: err.message }))
+        return true
+
       default:
         sendResponse({ error: 'Unknown message type' })
         return false
@@ -111,7 +171,7 @@ chrome.runtime.onMessage.addListener(
   },
 )
 
-supabase.auth.onAuthStateChange((event, session) => {
+supabase.auth.onAuthStateChange((event) => {
   if (event === 'SIGNED_OUT') {
     chrome.storage.local.remove(['cachedVaults', 'cachedEntries'])
   }
