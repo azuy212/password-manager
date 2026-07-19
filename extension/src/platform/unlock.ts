@@ -5,7 +5,7 @@ const PBKDF2_ITERATIONS = 600000
 const KEY_LENGTH = 32
 const SALT_LENGTH = 32
 
-class SecureKey {
+export class SecureKey {
   private bytes: Uint8Array
 
   constructor(bytes: number[]) {
@@ -36,6 +36,17 @@ export function destroyAll(): void {
   _passwordKey?.destroy()
   _passwordKey = null
   _encryptedVEK = null
+}
+
+export async function decryptVEK(): Promise<SecureKey | null> {
+  if (!_passwordKey || !_encryptedVEK) return null
+  try {
+    const { ciphertext, nonce, tag } = parseEncryptedJson(_encryptedVEK)
+    const vekBytes = await cryptoProvider.decrypt(ciphertext, _passwordKey.toArray(), nonce, tag)
+    return new SecureKey(vekBytes)
+  } catch {
+    return null
+  }
 }
 
 interface UserRow {
