@@ -68,7 +68,11 @@ async function handleSupabaseQuery(table: string, select?: string, filters?: Rec
   let query = supabase.from(table as never).select(select ?? '*')
   if (filters) {
     for (const [key, value] of Object.entries(filters)) {
-      query = query.eq(key, value as never)
+      if (value === null) {
+        query = query.is(key, null) as typeof query
+      } else {
+        query = query.eq(key, value as never)
+      }
     }
   }
   if (single) {

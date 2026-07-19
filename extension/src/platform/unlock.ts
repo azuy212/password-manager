@@ -86,7 +86,7 @@ export async function fetchUserProfile(userId: string): Promise<
   const res = await sendMessage<{ data?: UserRow; error?: string }>({
     type: 'SUPABASE_QUERY',
     table: 'users',
-    filters: { user_id: userId },
+    filters: { id: userId },
     single: true,
   })
   if (res.error || !res.data) {

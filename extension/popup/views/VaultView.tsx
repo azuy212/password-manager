@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { sendMessage } from '../messaging'
 import { destroyAll } from '../../src/platform/unlock'
 import { fetchVaults, fetchEntries, createEntry } from '../../src/repository/vaultRepository'
@@ -17,19 +17,29 @@ interface Props {
 type Page =
   | { type: 'vault-list' }
   | { type: 'entry-list' }
+  | { type: 'search' }
   | { type: 'entry-detail'; entry: DecryptedEntry }
   | { type: 'add-entry' }
+
+interface SearchResult {
+  entry: DecryptedEntry
+  vaultName: string
+}
 
 export function VaultView({ email, userId, onSignOut, onLock }: Props) {
   const [page, setPage] = useState<Page>({ type: 'vault-list' })
   const [vaults, setVaults] = useState<VaultRow[]>([])
   const [decryptedEntries, setDecryptedEntries] = useState<DecryptedEntry[]>([])
+  const [searchQuery, setSearchQuery] = useState('')
+  const [allEntries, setAllEntries] = useState<Map<string, DecryptedEntry[]>>(new Map())
   const [loading, setLoading] = useState(true)
+  const [searchLoading, setSearchLoading] = useState(false)
   const [error, setError] = useState('')
   const [copiedId, setCopiedId] = useState<string | null>(null)
 
   const activeVault = useRef<VaultRow | null>(null)
   const activeDek = useRef<SecureKey | null>(null)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     fetchVaults(userId)
@@ -60,11 +70,8 @@ export function VaultView({ email, userId, onSignOut, onLock }: Props) {
         const d = await decryptEntryPayload(entry.encryptedPayload, dek)
         if (d) {
           decrypted.push({
-            ...d,
-            id: entry.id,
-            vaultId: entry.vaultId,
-            createdAt: entry.createdAt,
-            updatedAt: entry.updatedAt,
+            ...d, id: entry.id, vaultId: entry.vaultId,
+            createdAt: entry.createdAt, updatedAt: entry.updatedAt,
           })
         }
       }
@@ -77,39 +84,74 @@ export function VaultView({ email, userId, onSignOut, onLock }: Props) {
     }
   }, [])
 
-  const handleCreateEntry = useCallback(async (data: {
-    title: string; username: string; password: string; url: string; notes: string
-  }) => {
-    const vault = activeVault.current
-    const dek = activeDek.current
-    if (!vault || !dek) return
+  const loadAllVaultEntries = useCallback(async () => {
+    setSearchLoading(true)
     setError('')
+    const map = new Map<string, DecryptedEntry[]>()
     try {
-      const payload = await encryptEntryPayload(data, dek)
-      await createEntry(vault.id, payload)
-      const entries = await fetchEntries(vault.id)
-      const decrypted: DecryptedEntry[] = []
+      for (const vault of vaults) {
+        const dek = await decryptVaultKey(vault)
+        if (!dek) continue
+        const entries = await fetchEntries(vault.id)
+        const decrypted: DecryptedEntry[] = []
+        for (const entry of entries) {
+          const d = await decryptEntryPayload(entry.encryptedPayload, dek)
+          if (d) {
+            decrypted.push({
+              ...d, id: entry.id, vaultId: entry.vaultId,
+              createdAt: entry.createdAt, updatedAt: entry.updatedAt,
+            })
+          }
+        }
+        dek.destroy()
+        if (decrypted.length > 0) map.set(vault.id, decrypted)
+      }
+      setAllEntries(map)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Search failed')
+    } finally {
+      setSearchLoading(false)
+    }
+  }, [vaults])
+
+  const searchResults = useMemo<SearchResult[]>(() => {
+    if (!searchQuery.trim()) return []
+    const q = searchQuery.toLowerCase().trim()
+    const results: SearchResult[] = []
+    for (const vault of vaults) {
+      const entries = allEntries.get(vault.id) ?? []
       for (const entry of entries) {
-        const d = await decryptEntryPayload(entry.encryptedPayload, dek)
-        if (d) {
-          decrypted.push({
-            ...d, id: entry.id, vaultId: entry.vaultId,
-            createdAt: entry.createdAt, updatedAt: entry.updatedAt,
-          })
+        if (
+          entry.title.toLowerCase().includes(q) ||
+          entry.username.toLowerCase().includes(q) ||
+          entry.url.toLowerCase().includes(q) ||
+          entry.notes.toLowerCase().includes(q)
+        ) {
+          results.push({ entry, vaultName: vault.name })
         }
       }
-      setDecryptedEntries(decrypted)
-      setPage({ type: 'entry-list' })
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to create entry')
     }
-  }, [])
+    results.sort((a, b) => a.entry.title.localeCompare(b.entry.title))
+    return results
+  }, [searchQuery, allEntries, vaults])
+
+  const handleSearch = useCallback((value: string) => {
+    setSearchQuery(value)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      if (value.trim() && allEntries.size === 0) {
+        loadAllVaultEntries()
+      }
+    }, 300)
+  }, [allEntries.size, loadAllVaultEntries])
 
   const handleCopy = useCallback(async (text: string, entryId: string) => {
     await navigator.clipboard.writeText(text)
     setCopiedId(entryId)
     setTimeout(() => setCopiedId(null), 2000)
   }, [])
+
+  const isSearchActive = searchQuery.trim().length > 0
 
   const handleLock = async () => {
     destroyAll()
@@ -129,6 +171,10 @@ export function VaultView({ email, userId, onSignOut, onLock }: Props) {
     setPage({ type: 'vault-list' })
   }, [])
 
+  const handleEntryClick = useCallback((entry: DecryptedEntry) => {
+    setPage({ type: 'entry-detail', entry })
+  }, [])
+
   if (loading && page.type === 'vault-list') {
     return <BaseShell email={email}><p style={styles.loading}>Loading vaults...</p></BaseShell>
   }
@@ -141,9 +187,49 @@ export function VaultView({ email, userId, onSignOut, onLock }: Props) {
           <button onClick={handleLock} style={styles.lockBtn}>Lock</button>
         </div>
         <p style={styles.email}>{email}</p>
+
+        {page.type !== 'entry-detail' && page.type !== 'add-entry' && (
+          <div style={styles.searchWrap}>
+            <input
+              type="text"
+              placeholder="Search all vaults..."
+              value={searchQuery}
+              onChange={e => handleSearch(e.target.value)}
+              style={styles.searchInput}
+            />
+          </div>
+        )}
+
         {error && <div style={styles.error}>{error}</div>}
 
-        {page.type === 'vault-list' && (
+        {isSearchActive && page.type !== 'entry-detail' && page.type !== 'add-entry' && (
+          <div>
+            {searchLoading && searchResults.length === 0 && (
+              <p style={styles.loadingText}>Decrypting entries...</p>
+            )}
+            {!searchLoading && searchResults.length === 0 && searchQuery.trim() && (
+              <p style={styles.empty}>No matching entries</p>
+            )}
+            {searchResults.length > 0 && (
+              <ul style={styles.list}>
+                {searchResults.map(r => (
+                  <li key={r.entry.id} style={styles.listItem} onClick={() => handleEntryClick(r.entry)}>
+                    <div>
+                      <div style={styles.entryTitle}>{r.entry.title}</div>
+                      <div style={styles.entrySub}>
+                        {r.entry.username}
+                        <span style={styles.vaultTag}>{r.vaultName}</span>
+                      </div>
+                    </div>
+                    <span style={styles.chevron}>→</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {!isSearchActive && page.type === 'vault-list' && (
           <div>
             <h2 style={styles.sectionTitle}>Vaults ({vaults.length})</h2>
             {vaults.length === 0
@@ -160,11 +246,11 @@ export function VaultView({ email, userId, onSignOut, onLock }: Props) {
           </div>
         )}
 
-        {page.type === 'entry-list' && (
+        {!isSearchActive && page.type === 'entry-list' && (
           <div>
             <button onClick={goBackToVaults} style={styles.backBtn}>← Vaults</button>
             {loading
-              ? <p style={styles.loading}>Decrypting entries...</p>
+              ? <p style={styles.loadingText}>Decrypting entries...</p>
               : <>
                   <div style={styles.sectionRow}>
                     <h2 style={styles.sectionTitle}>Entries ({decryptedEntries.length})</h2>
@@ -174,7 +260,7 @@ export function VaultView({ email, userId, onSignOut, onLock }: Props) {
                     ? <p style={styles.empty}>No entries</p>
                     : <ul style={styles.list}>
                         {decryptedEntries.map(e => (
-                          <li key={e.id} style={styles.listItem} onClick={() => setPage({ type: 'entry-detail', entry: e })}>
+                          <li key={e.id} style={styles.listItem} onClick={() => handleEntryClick(e)}>
                             <div>
                               <div style={styles.entryTitle}>{e.title}</div>
                               <div style={styles.entrySub}>{e.username}</div>
@@ -194,14 +280,40 @@ export function VaultView({ email, userId, onSignOut, onLock }: Props) {
             entry={page.entry}
             copied={copiedId === page.entry.id}
             onCopy={() => handleCopy(page.entry.password, page.entry.id)}
-            onBack={() => setPage({ type: 'entry-list' })}
+            onBack={() => setPage(isSearchActive ? { type: 'search' } : { type: 'entry-list' })}
           />
         )}
 
         {page.type === 'add-entry' && (
           <AddEntryForm
+            vaultId={activeVault.current?.id ?? ''}
             onBack={() => setPage({ type: 'entry-list' })}
-            onSubmit={handleCreateEntry}
+            onSubmit={async (data) => {
+              const vault = activeVault.current
+              const dek = activeDek.current
+              if (!vault || !dek) return
+              setError('')
+              try {
+                const payload = await encryptEntryPayload(data, dek)
+                await createEntry(vault.id, payload)
+                // Refresh
+                const entries = await fetchEntries(vault.id)
+                const decrypted: DecryptedEntry[] = []
+                for (const entry of entries) {
+                  const d = await decryptEntryPayload(entry.encryptedPayload, dek)
+                  if (d) {
+                    decrypted.push({
+                      ...d, id: entry.id, vaultId: entry.vaultId,
+                      createdAt: entry.createdAt, updatedAt: entry.updatedAt,
+                    })
+                  }
+                }
+                setDecryptedEntries(decrypted)
+                setPage({ type: 'entry-list' })
+              } catch (e) {
+                setError(e instanceof Error ? e.message : 'Failed to create entry')
+              }
+            }}
           />
         )}
 
@@ -264,7 +376,8 @@ function Field({ label, value, onCopy, copyLabel }: {
   )
 }
 
-function AddEntryForm({ onBack, onSubmit }: {
+function AddEntryForm({ vaultId, onBack, onSubmit }: {
+  vaultId: string
   onBack: () => void
   onSubmit: (data: { title: string; username: string; password: string; url: string; notes: string }) => Promise<void>
 }) {
@@ -325,6 +438,11 @@ const styles: Record<string, React.CSSProperties> = {
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
   title: { fontSize: 18, fontWeight: 600, margin: 0, color: '#2d6a4f' },
   email: { fontSize: 12, color: '#888', margin: '0 0 12px' },
+  searchWrap: { margin: '0 0 8px' },
+  searchInput: {
+    width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #ddd',
+    fontSize: 13, outline: 'none', boxSizing: 'border-box' as const, background: '#f9f9f9',
+  },
   sectionTitle: { fontSize: 14, fontWeight: 600, margin: '12px 0 8px', color: '#333' },
   sectionRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
   list: { listStyle: 'none', padding: 0, margin: 0 },
@@ -333,6 +451,10 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer',
   },
   vaultName: { fontWeight: 500, color: '#2d6a4f' },
+  vaultTag: {
+    display: 'inline-block', marginLeft: 6, padding: '0 5px', borderRadius: 3,
+    background: '#e8f5e9', color: '#2e7d32', fontSize: 10, fontWeight: 600,
+  },
   chevron: { color: '#ccc', fontSize: 16 },
   entryTitle: { fontWeight: 500, color: '#333' },
   entrySub: { fontSize: 12, color: '#888', marginTop: 2 },
@@ -344,6 +466,7 @@ const styles: Record<string, React.CSSProperties> = {
   empty: { color: '#999', fontSize: 13, fontStyle: 'italic', padding: '8px 0' },
   error: { color: '#d32f2f', fontSize: 12, padding: '8px 0' },
   loading: { textAlign: 'center' as const, color: '#999', padding: 40 },
+  loadingText: { textAlign: 'center' as const, color: '#999', padding: 20 },
   field: { marginBottom: 12 },
   fieldLabel: { fontSize: 11, fontWeight: 600, color: '#888', textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 2 },
   fieldRow: { display: 'flex', gap: 4 },
