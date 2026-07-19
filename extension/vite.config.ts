@@ -10,7 +10,6 @@ const manifest = defineManifest({
     'storage',
     'tabs',
     'clipboardWrite',
-    'identity',
   ],
   host_permissions: [
     'http://localhost:*/*',

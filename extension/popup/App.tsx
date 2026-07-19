@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useState } from 'react'
-import { sendMessage } from './messaging'
+import React, { useEffect, useReducer } from 'react'
+import { sendGetSession } from './messaging'
 import { SignInView } from './views/SignInView'
 import { UnlockView } from './views/UnlockView'
 import { VaultView } from './views/VaultView'
@@ -10,59 +10,59 @@ type View =
   | { type: 'unlock'; userId: string; email: string }
   | { type: 'vault'; userId: string; email: string }
 
+type Action =
+  | { type: 'SESSION_FOUND'; userId: string; email: string }
+  | { type: 'NO_SESSION' }
+  | { type: 'SIGNED_IN'; userId: string; email: string }
+  | { type: 'SIGNED_OUT' }
+  | { type: 'LOCKED'; userId: string; email: string }
+
+function reducer(_state: View, action: Action): View {
+  switch (action.type) {
+    case 'SESSION_FOUND':
+    case 'SIGNED_IN':
+      return { type: 'unlock', userId: action.userId, email: action.email }
+    case 'NO_SESSION':
+    case 'SIGNED_OUT':
+      return { type: 'sign-in' }
+    case 'LOCKED':
+      return { type: 'unlock', userId: action.userId, email: action.email }
+  }
+}
+
 export function App() {
-  const [view, setView] = useState<View>({ type: 'loading' })
-  const [lastSession, setLastSession] = useState<{ userId: string; email: string } | null>(null)
+  const [view, dispatch] = useReducer(reducer, { type: 'loading' } satisfies View)
 
   useEffect(() => {
-    sendMessage<{ session: { userId: string; email: string } | null }>({ type: 'GET_SESSION' })
+    sendGetSession()
       .then((res) => {
         if (res.session) {
-          setLastSession(res.session)
-          setView({ type: 'unlock', userId: res.session.userId, email: res.session.email })
+          dispatch({ type: 'SESSION_FOUND', userId: res.session.userId, email: res.session.email })
         } else {
-          setView({ type: 'sign-in' })
+          dispatch({ type: 'NO_SESSION' })
         }
       })
-      .catch(() => setView({ type: 'sign-in' }))
+      .catch(() => dispatch({ type: 'NO_SESSION' }))
   }, [])
-
-  const handleSignInSuccess = useCallback((userId: string, email: string) => {
-    setLastSession({ userId, email })
-    setView({ type: 'unlock', userId, email })
-  }, [])
-
-  const handleUnlocked = useCallback((userId: string, email: string) => {
-    setLastSession({ userId, email })
-    setView({ type: 'vault', userId, email })
-  }, [])
-
-  const handleSignOut = useCallback(() => {
-    setView({ type: 'sign-in' })
-  }, [])
-
-  const handleLock = useCallback(() => {
-    if (lastSession) {
-      setView({ type: 'unlock', ...lastSession })
-    } else {
-      setView({ type: 'sign-in' })
-    }
-  }, [lastSession])
 
   switch (view.type) {
     case 'loading':
       return <div style={styles.container}>Loading...</div>
 
     case 'sign-in':
-      return <SignInView onSuccess={handleSignInSuccess} />
+      return (
+        <SignInView
+          onSuccess={(userId, email) => dispatch({ type: 'SIGNED_IN', userId, email })}
+        />
+      )
 
     case 'unlock':
       return (
         <UnlockView
           userId={view.userId}
           email={view.email}
-          onUnlocked={() => handleUnlocked(view.userId, view.email)}
-          onSignOut={handleSignOut}
+          onUnlocked={() => dispatch({ type: 'SIGNED_IN', userId: view.userId, email: view.email })}
+          onSignOut={() => dispatch({ type: 'SIGNED_OUT' })}
         />
       )
 
@@ -71,13 +71,10 @@ export function App() {
         <VaultView
           email={view.email}
           userId={view.userId}
-          onSignOut={handleSignOut}
-          onLock={handleLock}
+          onSignOut={() => dispatch({ type: 'SIGNED_OUT' })}
+          onLock={() => dispatch({ type: 'LOCKED', userId: view.userId, email: view.email })}
         />
       )
-
-    default:
-      return <div style={styles.container}>Unknown state</div>
   }
 }
 

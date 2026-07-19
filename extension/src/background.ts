@@ -1,63 +1,12 @@
 import { supabase } from './platform/network'
 import type { PostgrestSingleResponse } from '@supabase/supabase-js'
-
-interface SignInMessage {
-  type: 'SIGN_IN'
-  email: string
-  password: string
-}
-
-interface SignOutMessage {
-  type: 'SIGN_OUT'
-}
-
-interface GetSessionMessage {
-  type: 'GET_SESSION'
-}
-
-interface GetActiveTabMessage {
-  type: 'GET_ACTIVE_TAB'
-}
-
-interface SupabaseQueryMessage {
-  type: 'SUPABASE_QUERY'
-  table: 'users' | 'vaults' | 'vault_entries'
-  select?: string
-  filters?: Record<string, unknown>
-  single?: boolean
-}
-
-interface SupabaseUpsertMessage {
-  type: 'SUPABASE_UPSERT'
-  table: 'users' | 'vaults' | 'vault_entries'
-  values: Record<string, unknown>
-  onConflict?: string
-}
-
-type Message =
-  | SignInMessage
-  | SignOutMessage
-  | GetSessionMessage
-  | GetActiveTabMessage
-  | SupabaseQueryMessage
-  | SupabaseUpsertMessage
-
-interface SignInResponse {
-  success: boolean
-  userId?: string
-  email?: string
-  error?: string
-}
-
-interface SessionResponse {
-  session: { userId: string; email: string } | null
-}
-
-interface ActiveTabResponse {
-  url: string
-  host: string
-  title: string
-}
+import {
+  MessageType,
+  type Message,
+  type SignInResponse,
+  type SessionResponse,
+  type ActiveTabResponse,
+} from './messageTypes'
 
 function handleResponse<T>(res: PostgrestSingleResponse<T>) {
   if (res.error) throw new Error(res.error.message)
@@ -140,29 +89,29 @@ async function handleGetActiveTab(): Promise<ActiveTabResponse | null> {
 chrome.runtime.onMessage.addListener(
   (message: Message, _sender, sendResponse) => {
     switch (message.type) {
-      case 'SIGN_IN':
+      case MessageType.SIGN_IN:
         handleSignIn(message.email, message.password).then(sendResponse)
         return true
 
-      case 'SIGN_OUT':
+      case MessageType.SIGN_OUT:
         handleSignOut().then(() => sendResponse({ success: true }))
         return true
 
-      case 'GET_SESSION':
+      case MessageType.GET_SESSION:
         handleGetSession().then(sendResponse)
         return true
 
-      case 'GET_ACTIVE_TAB':
+      case MessageType.GET_ACTIVE_TAB:
         handleGetActiveTab().then(sendResponse)
         return true
 
-      case 'SUPABASE_QUERY':
+      case MessageType.SUPABASE_QUERY:
         handleSupabaseQuery(message.table, message.select, message.filters, message.single)
           .then(data => sendResponse({ data }))
           .catch(err => sendResponse({ error: err.message }))
         return true
 
-      case 'SUPABASE_UPSERT':
+      case MessageType.SUPABASE_UPSERT:
         handleSupabaseUpsert(message.table, message.values, message.onConflict)
           .then(data => sendResponse({ data }))
           .catch(err => sendResponse({ error: err.message }))

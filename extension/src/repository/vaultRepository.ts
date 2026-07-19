@@ -1,4 +1,4 @@
-import { sendMessage } from '../../popup/messaging'
+import { supabaseQuery, supabaseUpsert } from '../../popup/messaging'
 
 interface VaultRow {
   id: string
@@ -76,23 +76,13 @@ function parseEntryRow(row: VaultEntryRow): VaultEntry {
 }
 
 export async function fetchVaults(userId: string): Promise<Vault[]> {
-  const res = await sendMessage<{ data?: VaultRow[]; error?: string }>({
-    type: 'SUPABASE_QUERY',
-    table: 'vaults',
-    filters: { user_id: userId, deleted_at: null },
-  })
-  if (res.error) throw new Error(res.error)
-  return (res.data ?? []).map(parseVaultRow)
+  const rows = await supabaseQuery<VaultRow[]>('vaults', { filters: { user_id: userId, deleted_at: null } })
+  return (rows ?? []).map(parseVaultRow)
 }
 
 export async function fetchEntries(vaultId: string): Promise<VaultEntry[]> {
-  const res = await sendMessage<{ data?: VaultEntryRow[]; error?: string }>({
-    type: 'SUPABASE_QUERY',
-    table: 'vault_entries',
-    filters: { vault_id: vaultId, deleted_at: null },
-  })
-  if (res.error) throw new Error(res.error)
-  return (res.data ?? []).map(parseEntryRow)
+  const rows = await supabaseQuery<VaultEntryRow[]>('vault_entries', { filters: { vault_id: vaultId, deleted_at: null } })
+  return (rows ?? []).map(parseEntryRow)
 }
 
 export async function createVault(
@@ -100,57 +90,35 @@ export async function createVault(
   name: string,
   encryptedEncryptionKey: string,
 ): Promise<Vault> {
-  const res = await sendMessage<{ data?: VaultRow; error?: string }>({
-    type: 'SUPABASE_UPSERT',
-    table: 'vaults',
-    values: {
-      user_id: userId,
-      name,
-      encrypted_encryption_key: encryptedEncryptionKey,
-    },
+  const data = await supabaseUpsert<VaultRow>('vaults', {
+    user_id: userId,
+    name,
+    encrypted_encryption_key: encryptedEncryptionKey,
   })
-  if (res.error) throw new Error(res.error)
-  return parseVaultRow(res.data!)
+  return parseVaultRow(data)
 }
 
 export async function createEntry(
   vaultId: string,
   encryptedPayload: string,
 ): Promise<VaultEntry> {
-  const res = await sendMessage<{ data?: VaultEntryRow; error?: string }>({
-    type: 'SUPABASE_UPSERT',
-    table: 'vault_entries',
-    values: {
-      vault_id: vaultId,
-      encrypted_payload: encryptedPayload,
-    },
+  const data = await supabaseUpsert<VaultEntryRow>('vault_entries', {
+    vault_id: vaultId,
+    encrypted_payload: encryptedPayload,
   })
-  if (res.error) throw new Error(res.error)
-  return parseEntryRow(res.data!)
+  return parseEntryRow(data)
 }
 
 export async function softDeleteVault(vaultId: string): Promise<void> {
-  const res = await sendMessage<{ data?: unknown; error?: string }>({
-    type: 'SUPABASE_UPSERT',
-    table: 'vaults',
-    values: {
-      id: vaultId,
-      deleted_at: new Date().toISOString(),
-    },
-    onConflict: 'id',
-  })
-  if (res.error) throw new Error(res.error)
+  await supabaseUpsert('vaults', {
+    id: vaultId,
+    deleted_at: new Date().toISOString(),
+  }, 'id')
 }
 
 export async function softDeleteEntry(entryId: string): Promise<void> {
-  const res = await sendMessage<{ data?: unknown; error?: string }>({
-    type: 'SUPABASE_UPSERT',
-    table: 'vault_entries',
-    values: {
-      id: entryId,
-      deleted_at: new Date().toISOString(),
-    },
-    onConflict: 'id',
-  })
-  if (res.error) throw new Error(res.error)
+  await supabaseUpsert('vault_entries', {
+    id: entryId,
+    deleted_at: new Date().toISOString(),
+  }, 'id')
 }

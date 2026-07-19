@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { sendMessage } from '../messaging'
+import { sendSignIn } from '../messaging'
 
 interface Props {
   onSuccess: (userId: string, email: string) => void
@@ -22,11 +22,7 @@ export function SignInView({ onSuccess }: Props) {
     setError('')
 
     try {
-      const res = await sendMessage<{ success: boolean; userId?: string; email?: string; error?: string }>({
-        type: 'SIGN_IN',
-        email: email.trim(),
-        password,
-      })
+      const res = await sendSignIn(email.trim(), password)
       if (res.success && res.userId) {
         onSuccess(res.userId, res.email ?? email.trim())
       } else {

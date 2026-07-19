@@ -1,5 +1,19 @@
 import type { VaultEntry } from '../types/vault';
 
+const SCORE = {
+  HOST_EXACT: 200,
+  DOMAIN_MATCH: 150,
+  TITLE_EXACT: 100,
+  TITLE_STARTS_WITH: 90,
+  HOST_EXACT_MATCH: 85,
+  HOST_STARTS_WITH: 80,
+  USERNAME_STARTS_WITH: 70,
+  HOST_CONTAINS: 60,
+  TITLE_CONTAINS: 50,
+  USERNAME_CONTAINS: 40,
+  NOTES_CONTAINS: 20,
+} as const;
+
 export function getSearchText(entry: VaultEntry): string {
   const parts: (string | undefined)[] = [
     entry.title,
@@ -73,20 +87,20 @@ function scoreEntry(
   let score = 0;
 
   if (q) {
-    if (title === q) score += 100;
-    else if (title.startsWith(q)) score += 90;
-    if (hostStr === q) score += 85;
-    else if (hostStr.startsWith(q)) score += 80;
-    if (username.startsWith(q)) score += 70;
-    if (hostStr.includes(q)) score += 60;
-    if (title.includes(q)) score += 50;
-    if (username.includes(q)) score += 40;
-    if (notes.includes(q)) score += 20;
+    if (title === q) score += SCORE.TITLE_EXACT;
+    else if (title.startsWith(q)) score += SCORE.TITLE_STARTS_WITH;
+    if (hostStr === q) score += SCORE.HOST_EXACT_MATCH;
+    else if (hostStr.startsWith(q)) score += SCORE.HOST_STARTS_WITH;
+    if (username.startsWith(q)) score += SCORE.USERNAME_STARTS_WITH;
+    if (hostStr.includes(q)) score += SCORE.HOST_CONTAINS;
+    if (title.includes(q)) score += SCORE.TITLE_CONTAINS;
+    if (username.includes(q)) score += SCORE.USERNAME_CONTAINS;
+    if (notes.includes(q)) score += SCORE.NOTES_CONTAINS;
   }
 
   if (mode === 'relevant' && currentHost && host) {
-    if (host === currentHost) score += 200;
-    else if (registrableDomain(host) === registrableDomain(currentHost)) score += 150;
+    if (host === currentHost) score += SCORE.HOST_EXACT;
+    else if (registrableDomain(host) === registrableDomain(currentHost)) score += SCORE.DOMAIN_MATCH;
   }
 
   return score;

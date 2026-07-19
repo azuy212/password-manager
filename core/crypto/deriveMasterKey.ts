@@ -1,35 +1,9 @@
 import { cryptoProvider } from '../platform/crypto';
+import { SecureKey } from './SecureKey';
 
-// OWASP 2023 recommended minimum for PBKDF2-SHA256
 const PBKDF2_ITERATIONS = 600000;
-const KEY_LENGTH = 32; // 256 bits
-const SALT_LENGTH = 32; // 256 bits — OWASP recommended minimum
-
-/**
- * Opaque wrapper for the master key to prevent accidental logging/serialization
- */
-export class SecureKey {
-  private _bytes: Uint8Array;
-
-  constructor(bytes: number[]) {
-    this._bytes = new Uint8Array(bytes);
-  }
-
-  getBytes(): Uint8Array {
-    return new Uint8Array(this._bytes);
-  }
-
-  toArray(): number[] {
-    return Array.from(this._bytes);
-  }
-
-  /**
-   * Zero out the key material from memory (best-effort)
-   */
-  destroy(): void {
-    this._bytes.fill(0);
-  }
-}
+const KEY_LENGTH = 32;
+const SALT_LENGTH = 32;
 
 /**
  * Derive a master key from a password using PBKDF2-SHA256

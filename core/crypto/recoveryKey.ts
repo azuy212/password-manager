@@ -1,5 +1,5 @@
 import { cryptoProvider } from '../platform/crypto';
-import { SecureKey } from './deriveMasterKey';
+import { SecureKey } from './SecureKey';
 import { encryptBytes, decryptBytes } from './encrypt';
 
 // Crockford Base32 alphabet (excludes I, L, O, U to avoid confusion)

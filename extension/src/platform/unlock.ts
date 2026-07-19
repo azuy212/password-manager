@@ -1,29 +1,10 @@
 import { cryptoProvider } from './crypto'
-import { sendMessage } from '../../popup/messaging'
+import { supabaseQuery } from '../../popup/messaging'
+import { SecureKey } from '@/core/crypto/SecureKey'
 
 const PBKDF2_ITERATIONS = 600000
 const KEY_LENGTH = 32
 const SALT_LENGTH = 32
-
-export class SecureKey {
-  private bytes: Uint8Array
-
-  constructor(bytes: number[]) {
-    this.bytes = new Uint8Array(bytes)
-  }
-
-  getBytes(): Uint8Array {
-    return new Uint8Array(this.bytes)
-  }
-
-  toArray(): number[] {
-    return Array.from(this.bytes)
-  }
-
-  destroy(): void {
-    this.bytes.fill(0)
-  }
-}
 
 let _passwordKey: SecureKey | null = null
 let _encryptedVEK: string | null = null
@@ -83,23 +64,18 @@ export async function fetchUserProfile(userId: string): Promise<
   | { salt: number[]; publicKey: number[]; encryptedVEKPassword: string; cryptoVersion: number }
   | { error: string }
 > {
-  const res = await sendMessage<{ data?: UserRow; error?: string }>({
-    type: 'SUPABASE_QUERY',
-    table: 'users',
-    filters: { id: userId },
-    single: true,
-  })
-  if (res.error || !res.data) {
-    return { error: res.error ?? 'Failed to fetch user profile' }
+  const data = await supabaseQuery<UserRow>('users', { filters: { id: userId }, single: true })
+  if (!data) {
+    return { error: 'Failed to fetch user profile' }
   }
-  if (!res.data.encrypted_vek_password) {
+  if (!data.encrypted_vek_password) {
     return { error: 'Vault not initialized with VEK. Please use your primary device first.' }
   }
   return {
-    salt: JSON.parse(res.data.salt),
-    publicKey: JSON.parse(res.data.public_key),
-    encryptedVEKPassword: res.data.encrypted_vek_password,
-    cryptoVersion: res.data.crypto_version,
+    salt: JSON.parse(data.salt),
+    publicKey: JSON.parse(data.public_key),
+    encryptedVEKPassword: data.encrypted_vek_password,
+    cryptoVersion: data.crypto_version,
   }
 }
 

@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { sendMessage } from '../messaging'
+import { sendSignOut } from '../messaging'
 import { destroyAll } from '../../src/platform/unlock'
 import { fetchVaults, fetchEntries, createEntry } from '../../src/repository/vaultRepository'
 import { decryptVaultKey, decryptEntryPayload, encryptEntryPayload } from '../../src/repository/vaultCrypto'
-import { SecureKey } from '../../src/platform/unlock'
+import { SecureKey } from '@/core/crypto/SecureKey'
 import type { Vault as VaultRow } from '../../src/repository/vaultRepository'
 import type { DecryptedEntry } from '../../src/repository/vaultCrypto'
 
@@ -160,7 +160,7 @@ export function VaultView({ email, userId, onSignOut, onLock }: Props) {
 
   const handleSignOutAndLock = async () => {
     destroyAll()
-    await sendMessage({ type: 'SIGN_OUT' })
+    await sendSignOut()
     onSignOut()
   }
 

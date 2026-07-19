@@ -1,6 +1,6 @@
 import { cryptoProvider } from '../platform/crypto';
-import { SecureKey } from './deriveMasterKey';
 import { stringToBytes, bytesToString } from '@/utils/encoding';
+import { SecureKey } from './SecureKey';
 
 /**
  * Encrypt data using AES-GCM

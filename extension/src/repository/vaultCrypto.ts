@@ -1,5 +1,6 @@
+import { SecureKey } from '@/core/crypto/SecureKey'
 import { cryptoProvider } from '../platform/crypto'
-import { getPasswordKey, SecureKey, decryptVEK } from '../platform/unlock'
+import { getPasswordKey, decryptVEK } from '../platform/unlock'
 
 import type { Vault as VaultDomain } from './vaultRepository'
 

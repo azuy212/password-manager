@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { sendMessage } from '../messaging'
+import { sendSignOut } from '../messaging'
 import { unlockVault } from '../../src/platform/unlock'
 
 interface Props {
@@ -39,7 +39,7 @@ export function UnlockView({ userId, email, onUnlocked, onSignOut }: Props) {
   }
 
   const handleSignOut = async () => {
-    await sendMessage({ type: 'SIGN_OUT' })
+    await sendSignOut()
     onSignOut()
   }
 
