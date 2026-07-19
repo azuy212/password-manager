@@ -3,7 +3,7 @@ export function sendMessage<T>(message: unknown): Promise<T> {
 }
 
 export async function supabaseQuery<T>(
-  table: 'identities' | 'vaults' | 'vault_entries',
+  table: 'users' | 'vaults' | 'vault_entries',
   options?: { select?: string; filters?: Record<string, unknown>; single?: boolean },
 ): Promise<T> {
   const res = await sendMessage<{ data?: T; error?: string }>({
@@ -16,7 +16,7 @@ export async function supabaseQuery<T>(
 }
 
 export async function supabaseUpsert<T>(
-  table: 'identities' | 'vaults' | 'vault_entries',
+  table: 'users' | 'vaults' | 'vault_entries',
   values: Record<string, unknown>,
   onConflict?: string,
 ): Promise<T> {

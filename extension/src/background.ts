@@ -21,7 +21,7 @@ interface GetActiveTabMessage {
 
 interface SupabaseQueryMessage {
   type: 'SUPABASE_QUERY'
-  table: 'identities' | 'vaults' | 'vault_entries'
+  table: 'users' | 'vaults' | 'vault_entries'
   select?: string
   filters?: Record<string, unknown>
   single?: boolean
@@ -29,7 +29,7 @@ interface SupabaseQueryMessage {
 
 interface SupabaseUpsertMessage {
   type: 'SUPABASE_UPSERT'
-  table: 'identities' | 'vaults' | 'vault_entries'
+  table: 'users' | 'vaults' | 'vault_entries'
   values: Record<string, unknown>
   onConflict?: string
 }

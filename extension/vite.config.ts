@@ -1,6 +1,6 @@
 import { crx, defineManifest } from '@crxjs/vite-plugin'
 import { resolve } from 'path'
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 
 const manifest = defineManifest({
   manifest_version: 3,
@@ -13,6 +13,7 @@ const manifest = defineManifest({
     'identity',
   ],
   host_permissions: [
+    'http://localhost:*/*',
     'https://*.supabase.co/*',
   ],
   action: {
@@ -30,14 +31,22 @@ const manifest = defineManifest({
   },
 })
 
-export default defineConfig({
-  plugins: [crx({ manifest })],
-  resolve: {
-    alias: {
-      '@': resolve(__dirname, '..'),
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, resolve(__dirname, '..'), 'EXPO_PUBLIC_')
+
+  return {
+    plugins: [crx({ manifest })],
+    resolve: {
+      alias: {
+        '@': resolve(__dirname, '..'),
+      },
     },
-  },
-  build: {
-    sourcemap: true,
-  },
+    define: {
+      'process.env.EXPO_PUBLIC_SUPABASE_URL': JSON.stringify(env.EXPO_PUBLIC_SUPABASE_URL),
+      'process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY': JSON.stringify(env.EXPO_PUBLIC_SUPABASE_ANON_KEY),
+    },
+    build: {
+      sourcemap: true,
+    },
+  }
 })
