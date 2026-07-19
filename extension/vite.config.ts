@@ -37,15 +37,6 @@ export default defineConfig({
       '@': resolve(__dirname, '..'),
     },
   },
-})
-
-export default defineConfig({
-  plugins: [crx({ manifest })],
-  resolve: {
-    alias: {
-      '@': resolve(__dirname, '..'),
-    },
-  },
   build: {
     sourcemap: true,
   },
