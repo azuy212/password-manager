@@ -1,4 +1,4 @@
-import { ed25519, x25519 } from '@noble/curves/ed25519'
+import { ed25519, x25519 } from '@noble/curves/ed25519.js'
 import type { CryptoProvider } from '../../../core/platform/interfaces'
 
 export const cryptoProvider: CryptoProvider = {

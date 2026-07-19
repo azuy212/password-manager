@@ -2,11 +2,13 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { sendMessage } from './messaging'
 import { SignInView } from './views/SignInView'
 import { UnlockView } from './views/UnlockView'
+import { VaultView } from './views/VaultView'
 
 type View =
   | { type: 'loading' }
   | { type: 'sign-in' }
   | { type: 'unlock'; userId: string; email: string }
+  | { type: 'vault'; userId: string; email: string }
 
 export function App() {
   const [view, setView] = useState<View>({ type: 'loading' })
@@ -27,6 +29,14 @@ export function App() {
     setView({ type: 'unlock', userId, email })
   }, [])
 
+  const handleUnlocked = useCallback((userId: string, email: string) => {
+    setView({ type: 'vault', userId, email })
+  }, [])
+
+  const handleSignOut = useCallback(() => {
+    setView({ type: 'sign-in' })
+  }, [])
+
   switch (view.type) {
     case 'loading':
       return <div style={styles.container}>Loading...</div>
@@ -35,7 +45,17 @@ export function App() {
       return <SignInView onSuccess={handleSignInSuccess} />
 
     case 'unlock':
-      return <UnlockView userId={view.userId} email={view.email} />
+      return (
+        <UnlockView
+          userId={view.userId}
+          email={view.email}
+          onUnlocked={() => handleUnlocked(view.userId, view.email)}
+          onSignOut={handleSignOut}
+        />
+      )
+
+    case 'vault':
+      return <VaultView email={view.email} onSignOut={handleSignOut} />
 
     default:
       return <div style={styles.container}>Unknown state</div>
