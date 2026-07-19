@@ -19,6 +19,15 @@ export const storeProvider: StoreProvider = {
     ) as VaultEntryRaw[];
   },
 
+  async getEntryById(id) {
+    const entries = appStore$.entries.get();
+    const entry = entries[id];
+    if (entry && !entry.deletedAt) {
+      return entry;
+    }
+    return null;
+  },
+
   async saveVault(vault) {
     const idx = appStore$.vaults.get().findIndex(v => v.id === vault.id);
     if (idx !== -1) {

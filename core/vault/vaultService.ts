@@ -181,9 +181,7 @@ export function createVaultService(store: StoreProvider): VaultService {
     },
 
     async updateEntry(entryId, updates, vaultKey) {
-      const entries = await store.getEntries('');
-      const allEntries = Object.values(entries);
-      const existing = allEntries.find(e => e.id === entryId);
+      const existing = await store.getEntryById(entryId);
       if (!existing) return null;
 
       const current = await decryptEntryContent(existing.encryptedPayload, vaultKey);
@@ -228,9 +226,7 @@ export function createVaultService(store: StoreProvider): VaultService {
     },
 
     async getEntry(entryId, vaultKey) {
-      const entries = await store.getEntries('');
-      const allEntries = Object.values(entries);
-      const entry = allEntries.find(e => e.id === entryId);
+      const entry = await store.getEntryById(entryId);
       if (!entry || !vaultKey) return null;
 
       try {

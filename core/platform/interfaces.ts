@@ -39,6 +39,7 @@ export interface StoreProvider {
   getVault(id: string): Promise<Vault | null>
   getVaults(): Promise<Vault[]>
   getEntries(vaultId: string): Promise<VaultEntryRaw[]>
+  getEntryById(id: string): Promise<VaultEntryRaw | null>
   saveVault(vault: Vault): Promise<void>
   saveEntry(entry: VaultEntryRaw): Promise<void>
   deleteEntry(id: string): Promise<void>
