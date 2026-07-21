@@ -92,19 +92,23 @@ chrome.runtime.onMessage.addListener(
       case MessageType.SIGN_IN:
         handleSignIn(message.email, message.password)
           .then(sendResponse)
-          .catch(() => sendResponse({ success: false, error: 'Service worker cold start' }))
+          .catch(err => sendResponse({ success: false, error: err.message }))
         return true
 
       case MessageType.SIGN_OUT:
-        handleSignOut().then(() => sendResponse({ success: true }))
+        handleSignOut()
+          .then(() => sendResponse({ success: true }))
+          .catch(err => sendResponse({ success: false, error: err.message }))
         return true
 
       case MessageType.GET_SESSION:
-        handleGetSession().then(sendResponse).catch(() => sendResponse({ session: null }))
+        handleGetSession().then(sendResponse).catch(err => sendResponse({ session: null, error: err.message }))
         return true
 
       case MessageType.GET_ACTIVE_TAB:
-        handleGetActiveTab().then(sendResponse)
+        handleGetActiveTab()
+          .then(sendResponse)
+          .catch(err => sendResponse({ error: err.message }))
         return true
 
       case MessageType.SUPABASE_QUERY:
@@ -126,8 +130,4 @@ chrome.runtime.onMessage.addListener(
   },
 )
 
-supabase.auth.onAuthStateChange((event) => {
-  if (event === 'SIGNED_OUT') {
-    chrome.storage.local.remove(['cachedVaults', 'cachedEntries'])
-  }
-})
+
