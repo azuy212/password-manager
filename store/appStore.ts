@@ -213,14 +213,14 @@ syncObservable(
         return toRow(entry);
       },
     },
-    create: (async (input: any, { onError }: any) => {
+    create: (async (input: any, { onError, retry }: any) => {
       const res = await supabase.from('vault_entries').upsert(input).select();
-      if (res.error) { onError(new Error(res.error.message), { source: 'create', type: 'create', retry: () => {} }); }
+      if (res.error) { onError(new Error(res.error.message), { source: 'create', type: 'create', retry }); }
       return res as any;
     }) as any,
-    update: (async (input: any, { onError }: any) => {
+    update: (async (input: any, { onError, retry }: any) => {
       const res = await supabase.from('vault_entries').upsert(input).select();
-      if (res.error) { onError(new Error(res.error.message), { source: 'update', type: 'update', retry: () => {} }); }
+      if (res.error) { onError(new Error(res.error.message), { source: 'update', type: 'update', retry }); }
       return res as any;
     }) as any,
   }),
