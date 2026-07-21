@@ -33,7 +33,7 @@ export const storeProvider: StoreProvider = {
     if (idx !== -1) {
       appStore$.vaults[idx].assign({ ...vault, updatedAt: Date.now() });
     } else {
-      appStore$.vaults.push({ ...vault, createdAt: Date.now(), updatedAt: Date.now() });
+      appStore$.vaults.push({ ...vault, createdAt: vault.createdAt ?? Date.now(), updatedAt: Date.now() });
     }
   },
 

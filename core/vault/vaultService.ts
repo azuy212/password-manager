@@ -76,7 +76,7 @@ export interface VaultService {
   createVault(input: VaultInput, vek: SecureKey): Promise<Vault>
   deleteVault(vaultId: string): Promise<void>
   getEntriesForVault(vaultId: string, vaultKey: SecureKey): Promise<VaultEntry[]>
-  getAllRawEntriesForVault(vaultId: string): Promise<VaultEntryRaw[]>
+  getRawEntriesForVault(vaultId: string): Promise<VaultEntryRaw[]>
   createEntry(input: VaultEntryInput, vaultKey: SecureKey): Promise<VaultEntry>
   updateEntry(entryId: string, updates: Partial<VaultEntryInput>, vaultKey: SecureKey): Promise<VaultEntry | null>
   deleteEntry(entryId: string): Promise<void>
@@ -149,7 +149,7 @@ export function createVaultService(store: StoreProvider): VaultService {
       return result;
     },
 
-    async getAllRawEntriesForVault(vaultId) {
+    async getRawEntriesForVault(vaultId) {
       return store.getEntries(vaultId);
     },
 
@@ -242,15 +242,6 @@ export function createVaultService(store: StoreProvider): VaultService {
       }
     },
   };
-}
-
-let _defaultService: VaultService | null = null;
-
-export function getDefaultVaultService(): VaultService {
-  if (!_defaultService) {
-    _defaultService = createVaultService(storeProvider);
-  }
-  return _defaultService;
 }
 
 export const vaultService = createVaultService(storeProvider);
