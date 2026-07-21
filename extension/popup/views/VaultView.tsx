@@ -36,6 +36,7 @@ export function VaultView({ email, userId, onSignOut, onLock }: Props) {
   const [copiedFeedback, setCopiedFeedback] = useState<string | null>(null)
   const [currentHost, setCurrentHost] = useState('')
   const deksRef = useRef<Map<string, SecureKey>>(new Map())
+  const feedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     sendGetActiveTab().then(tab => {
@@ -111,8 +112,15 @@ export function VaultView({ email, userId, onSignOut, onLock }: Props) {
     await navigator.clipboard.writeText(text)
     setCopiedFeedback(label)
     setCopyTarget(null)
-    setTimeout(() => setCopiedFeedback(null), 1500)
+    if (feedbackTimeoutRef.current) clearTimeout(feedbackTimeoutRef.current)
+    feedbackTimeoutRef.current = setTimeout(() => setCopiedFeedback(null), 1500)
   }
+
+  useEffect(() => {
+    return () => {
+      if (feedbackTimeoutRef.current) clearTimeout(feedbackTimeoutRef.current)
+    }
+  }, [])
 
   const handleLock = async () => {
     await destroyAll()
@@ -233,38 +241,23 @@ export function VaultView({ email, userId, onSignOut, onLock }: Props) {
               try {
                 const payload = await encryptEntryPayload(data, dek)
                 await createEntry(vaultId, payload)
-                const d = await decryptEntryPayload(payload, dek)
-                if (d) {
-                  const vault = vaults.find(v => v.id === vaultId)
-                  const entry: AllEntry = { ...d, id: '', vaultId, vaultName: vault?.name ?? '', createdAt: 0, updatedAt: 0 }
-                  const entries = await fetchEntries(vaultId)
-                  for (const raw of entries) {
-                    const dec = await decryptEntryPayload(raw.encryptedPayload, dek)
+                // Refresh all entries
+                const vaultsData = await fetchVaults(userId)
+                const all: AllEntry[] = []
+                for (const v of vaultsData) {
+                  const dk = deksRef.current.get(v.id) ?? await decryptVaultKey(v)
+                  if (!dk) continue
+                  if (!deksRef.current.has(v.id)) deksRef.current.set(v.id, dk)
+                  const entriesData = await fetchEntries(v.id)
+                  for (const raw of entriesData) {
+                    const dec = await decryptEntryPayload(raw.encryptedPayload, dk)
                     if (dec) {
-                      dec.id = raw.id
-                      dec.vaultId = raw.vaultId
-                      dec.createdAt = raw.createdAt
-                      dec.updatedAt = raw.updatedAt
+                      all.push({ ...dec, id: raw.id, vaultId: raw.vaultId, vaultName: v.name, createdAt: raw.createdAt, updatedAt: raw.updatedAt })
                     }
                   }
-                  // Refresh all entries
-                  const vaultsData = await fetchVaults(userId)
-                  const all: AllEntry[] = []
-                  for (const v of vaultsData) {
-                    const dk = deksRef.current.get(v.id) ?? await decryptVaultKey(v)
-                    if (!dk) continue
-                    if (!deksRef.current.has(v.id)) deksRef.current.set(v.id, dk)
-                    const entriesData = await fetchEntries(v.id)
-                    for (const raw of entriesData) {
-                      const dec = await decryptEntryPayload(raw.encryptedPayload, dk)
-                      if (dec) {
-                        all.push({ ...dec, id: raw.id, vaultId: raw.vaultId, vaultName: v.name, createdAt: raw.createdAt, updatedAt: raw.updatedAt })
-                      }
-                    }
-                  }
-                  all.sort((a, b) => a.title.localeCompare(b.title))
-                  setAllEntries(all)
                 }
+                all.sort((a, b) => a.title.localeCompare(b.title))
+                setAllEntries(all)
                 setPage({ type: 'entries-list' })
               } catch (e) {
                 setError(e instanceof Error ? e.message : 'Failed to create entry')
