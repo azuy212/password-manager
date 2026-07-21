@@ -1,10 +1,7 @@
 import { cryptoProvider } from './crypto'
 import { supabaseQuery } from '../../popup/messaging'
 import { SecureKey } from '@/core/crypto/SecureKey'
-
-const PBKDF2_ITERATIONS = 600000
-const KEY_LENGTH = 32
-const SALT_LENGTH = 32
+import { PBKDF2_ITERATIONS, KEY_LENGTH, SALT_LENGTH } from '@/core/crypto'
 
 let _passwordKey: SecureKey | null = null
 let _encryptedVEK: string | null = null

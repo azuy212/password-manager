@@ -60,17 +60,6 @@ function registrableDomain(host: string): string {
   return host;
 }
 
-function entryUrlHost(entry: VaultEntry): string | null {
-  if (!entry.url) return null;
-  const url = entry.url.trim();
-  if (!url) return null;
-  try {
-    return new URL(url.startsWith('http') ? url : `https://${url}`).hostname.replace(/^www\./, '');
-  } catch {
-    return url.replace(/^www\./, '').toLowerCase();
-  }
-}
-
 function scoreEntry(
   entry: VaultEntry,
   query: string,
@@ -80,8 +69,7 @@ function scoreEntry(
   const q = query.toLowerCase();
   const title = entry.title?.toLowerCase() ?? '';
   const username = entry.username?.toLowerCase() ?? '';
-  const host = entryUrlHost(entry);
-  const hostStr = host ?? '';
+  const hostStr = entry.url ? extractHost(entry.url) : '';
   const notes = entry.notes?.toLowerCase() ?? '';
 
   let score = 0;
@@ -98,9 +86,9 @@ function scoreEntry(
     if (notes.includes(q)) score += SCORE.NOTES_CONTAINS;
   }
 
-  if (mode === 'relevant' && currentHost && host) {
-    if (host === currentHost) score += SCORE.HOST_EXACT;
-    else if (registrableDomain(host) === registrableDomain(currentHost)) score += SCORE.DOMAIN_MATCH;
+  if (mode === 'relevant' && currentHost && hostStr) {
+    if (hostStr === currentHost) score += SCORE.HOST_EXACT;
+    else if (registrableDomain(hostStr) === registrableDomain(currentHost)) score += SCORE.DOMAIN_MATCH;
   }
 
   return score;

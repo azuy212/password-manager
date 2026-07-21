@@ -85,19 +85,6 @@ export async function fetchEntries(vaultId: string): Promise<VaultEntry[]> {
   return (rows ?? []).map(parseEntryRow)
 }
 
-export async function createVault(
-  userId: string,
-  name: string,
-  encryptedEncryptionKey: string,
-): Promise<Vault> {
-  const data = await supabaseUpsert<VaultRow>('vaults', {
-    user_id: userId,
-    name,
-    encrypted_encryption_key: encryptedEncryptionKey,
-  })
-  return parseVaultRow(data)
-}
-
 export async function createEntry(
   vaultId: string,
   encryptedPayload: string,
@@ -109,16 +96,4 @@ export async function createEntry(
   return parseEntryRow(data)
 }
 
-export async function softDeleteVault(vaultId: string): Promise<void> {
-  await supabaseUpsert('vaults', {
-    id: vaultId,
-    deleted_at: new Date().toISOString(),
-  }, 'id')
-}
 
-export async function softDeleteEntry(entryId: string): Promise<void> {
-  await supabaseUpsert('vault_entries', {
-    id: entryId,
-    deleted_at: new Date().toISOString(),
-  }, 'id')
-}

@@ -367,6 +367,9 @@ function AddEntryForm({ vaults, deks, onSubmit, onBack }: {
     <div>
       <button onClick={onBack} style={styles.backBtn}>← Back</button>
       <h2 style={styles.sectionTitle}>New Entry</h2>
+      {validVaults.length === 0 && (
+        <p style={styles.empty}>No vaults available. Create a vault on your mobile device first.</p>
+      )}
       <form onSubmit={handleSubmit} style={styles.form}>
         {validVaults.length > 1 && (
           <label style={styles.inpBlock}>
@@ -381,7 +384,7 @@ function AddEntryForm({ vaults, deks, onSubmit, onBack }: {
         <Inp label="Password" value={password} onChange={setPassword} required type="password" />
         <Inp label="URL" value={url} onChange={setUrl} />
         <Inp label="Notes" value={notes} onChange={setNotes} multiline />
-        <button type="submit" disabled={submitting || !title || !vaultId} style={styles.saveBtn}>
+        <button type="submit" disabled={submitting || !title || !vaultId || validVaults.length === 0} style={styles.saveBtn}>
           {submitting ? 'Saving...' : 'Save'}
         </button>
       </form>

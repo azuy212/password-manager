@@ -273,7 +273,7 @@ export default function UnlockScreen() {
           placeholderTextColor={colors.placeholder}
           keyboardType="email-address"
           autoCapitalize="none"
-          textContentType='username'
+          textContentType="username"
           value={email}
           onChangeText={setEmail}
           autoFocus
