@@ -1,4 +1,4 @@
-import { supabase } from './platform/network'
+import { getSupabase } from './platform/network'
 import type { PostgrestSingleResponse } from '@supabase/supabase-js'
 import {
   MessageType,
@@ -14,7 +14,7 @@ function handleResponse<T>(res: PostgrestSingleResponse<T>) {
 }
 
 async function handleSupabaseQuery(table: string, select?: string, filters?: Record<string, unknown>, single?: boolean) {
-  let query = supabase.from(table as never).select(select ?? '*')
+  let query = getSupabase().from(table as never).select(select ?? '*')
   if (filters) {
     for (const [key, value] of Object.entries(filters)) {
       if (value === null) {
@@ -31,7 +31,7 @@ async function handleSupabaseQuery(table: string, select?: string, filters?: Rec
 }
 
 async function handleSupabaseUpsert(table: string, values: Record<string, unknown>, onConflict?: string) {
-  let query = supabase.from(table as never).upsert(values as never)
+  let query = getSupabase().from(table as never).upsert(values as never)
   if (onConflict) {
     query = query.onConflict(onConflict)
   }
@@ -43,7 +43,7 @@ chrome.runtime.onInstalled.addListener(() => {
 })
 
 async function handleSignIn(email: string, password: string): Promise<SignInResponse> {
-  const result = await supabase.auth.signInWithPassword({ email, password })
+  const result = await getSupabase().auth.signInWithPassword({ email, password })
   if (result.error) {
     return { success: false, error: result.error.message }
   }
@@ -58,11 +58,11 @@ async function handleSignIn(email: string, password: string): Promise<SignInResp
 }
 
 async function handleSignOut(): Promise<void> {
-  await supabase.auth.signOut()
+  await getSupabase().auth.signOut()
 }
 
 async function handleGetSession(): Promise<SessionResponse> {
-  const { data } = await supabase.auth.getSession()
+  const { data } = await getSupabase().auth.getSession()
   if (!data.session?.user) {
     return { session: null }
   }

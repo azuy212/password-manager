@@ -1,19 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import type { Database } from '../../../types/database.types'
 
-function getSupabaseUrl(): string {
-  return process.env.EXPO_PUBLIC_SUPABASE_URL || ''
-}
-
-const SUPABASE_URL = getSupabaseUrl()
-const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
-
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  throw new Error(
-    'Supabase credentials required. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY in environment.',
-  )
-}
-
 const sessionStorage: Storage = {
   getItem(key: string) {
     return chrome.storage.session.get(key).then(r => r[key] ?? null)
@@ -35,11 +22,25 @@ const sessionStorage: Storage = {
   },
 }
 
-export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
-  auth: {
-    storage: sessionStorage,
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: false,
-  },
-})
+let _client: ReturnType<typeof createClient<Database>> | null = null
+
+export function getSupabase(): ReturnType<typeof createClient<Database>> {
+  if (!_client) {
+    const url = process.env.EXPO_PUBLIC_SUPABASE_URL || ''
+    const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
+    if (!url || !anonKey) {
+      throw new Error(
+        'Supabase credentials required. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY in environment.',
+      )
+    }
+    _client = createClient<Database>(url, anonKey, {
+      auth: {
+        storage: sessionStorage,
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: false,
+      },
+    })
+  }
+  return _client
+}
