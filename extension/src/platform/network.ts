@@ -1,7 +1,9 @@
 import { createClient } from '@supabase/supabase-js'
 import type { Database } from '../../../types/database.types'
 
-const sessionStorage: Storage = {
+// Supabase v2 auth accepts async storage (getItem returns Promise<string | null>).
+// The TS DOM Storage declares sync-only, but supabase-js tolerates Promise returns.
+const sessionStorage = {
   getItem(key: string) {
     return chrome.storage.session.get(key).then(r => r[key] ?? null)
   },
@@ -35,7 +37,7 @@ export function getSupabase(): ReturnType<typeof createClient<Database>> {
     }
     _client = createClient<Database>(url, anonKey, {
       auth: {
-        storage: sessionStorage,
+        storage: sessionStorage as any,
         autoRefreshToken: true,
         persistSession: true,
         detectSessionInUrl: false,
