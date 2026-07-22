@@ -1,5 +1,5 @@
-import CryptoNative from 'crypto-native';
-import { SecureKey } from './deriveMasterKey';
+import { cryptoProvider } from '../platform/crypto';
+import { SecureKey } from './SecureKey';
 import { encryptBytes, decryptBytes } from './encrypt';
 
 // Crockford Base32 alphabet (excludes I, L, O, U to avoid confusion)
@@ -65,7 +65,7 @@ function verifyChecksum(data: string, check: string): boolean {
  * Returns raw bytes + formatted string with Crockford Base32 + checksum.
  */
 export async function generateRecoveryKey(): Promise<{ bytes: number[]; formatted: string }> {
-  const raw = await CryptoNative.generateRandomBytes(RECOVERY_KEY_BYTES);
+  const raw = await cryptoProvider.generateRandomBytes(RECOVERY_KEY_BYTES);
   const encoded = crockfordEncode(raw);
   const check = checksumChar(encoded);
   const full = encoded + check;
@@ -98,7 +98,7 @@ export function validateRecoveryKeyFormat(input: string): boolean {
 
 async function deriveAESKey(recoveryBytes: number[]): Promise<number[]> {
   const zeroKey = new Array(32).fill(0);
-  return await CryptoNative.hmacSha256(recoveryBytes, zeroKey);
+  return await cryptoProvider.hmacSha256(recoveryBytes, zeroKey);
 }
 
 /**

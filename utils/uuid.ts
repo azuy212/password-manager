@@ -1,8 +1,9 @@
-import * as Crypto from 'expo-crypto';
+import { uuidProvider } from '@/core/platform/uuid';
 
 /**
- * Generate a UUID v4 using expo-crypto's native implementation
+ * Generate a UUID v4.
+ * Delegates to platform provider (expo-crypto on mobile, Web Crypto on extension).
  */
 export function uuidv4(): string {
-  return Crypto.randomUUID();
+  return uuidProvider.v4();
 }

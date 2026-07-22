@@ -3,9 +3,7 @@ import { Alert, Platform } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { importCsv, createEntryKey } from '../core/import';
 import { getMasterKey } from '../core/keyStore';
-import { createEntry, decryptVaultKey, getEntriesForVault } from '../core/vault/vaultService';
-import { appStore$ } from '../store/appStore';
-import type { Vault } from '../types/vault';
+import { decryptVaultKey, vaultService } from '../core/vault/vaultService';
 
 const CSV_EXT = '.csv';
 const CSV_MIME = 'text/csv';
@@ -74,8 +72,8 @@ async function importCsvText(
   setIsImporting(true);
 
   try {
-    const vaults = appStore$.vaults.get();
-    const vault = vaults.find((v: Vault) => v.id === vaultId);
+    const vaults = await vaultService.getVaults();
+    const vault = vaults.find(v => v.id === vaultId);
 
     if (!vault) {
       showAlert('Error', 'Vault not found');
@@ -84,14 +82,14 @@ async function importCsvText(
 
     const vaultKey = await decryptVaultKey(vault.encryptedEncryptionKey, masterKey);
     try {
-      const existing = await getEntriesForVault(vaultId, vaultKey);
+      const existing = await vaultService.getEntriesForVault(vaultId, vaultKey);
       const existingKeys = new Set(
         existing.map((e) => createEntryKey(e.title, e.username, e.url))
       );
 
       const importResult = await importCsv(csvText, {
         vaultId,
-        createEntry: (input) => createEntry(input, vaultKey),
+        createEntry: (input) => vaultService.createEntry(input, vaultKey),
         existingKeys,
       });
 

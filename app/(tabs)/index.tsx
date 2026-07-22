@@ -3,7 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { appStore$ } from '@/store/appStore';
 import { useValue } from '@legendapp/state/react';
-import { createVault, deleteVault, decryptVEKForOperation } from '@/core/vault/vaultService';
+import { decryptVEKForOperation, vaultService } from '@/core/vault/vaultService';
 import type { Vault } from '@/types/vault';
 import React, { useCallback, useMemo, useState } from 'react';
 import {
@@ -156,7 +156,7 @@ export default function VaultsScreen() {
 
     setIsCreatingVault(true);
     try {
-      await createVault(
+      await vaultService.createVault(
         {
           name: newVaultName.trim(),
         },
@@ -183,7 +183,7 @@ export default function VaultsScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await deleteVault(vault.id);
+              await vaultService.deleteVault(vault.id);
             } catch (error: unknown) {
               const message = error instanceof Error ? error.message : 'Failed to delete vault';
               Alert.alert('Error', message);

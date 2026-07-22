@@ -194,32 +194,35 @@ syncObservable(
         deletedAt:        msOpt(row.deleted_at),
       }),
       save: (entry: VaultEntry | Record<string, VaultEntry>): any => {
+        const toRow = (e: any) => ({
+          id:                e.id,
+          vault_id:          e.vault_id ?? e.vaultId,
+          encrypted_payload: e.encrypted_payload ?? e.encryptedPayload,
+          version:           e.version ?? 1,
+          created_at:        e.created_at ?? (e.createdAt ? new Date(e.createdAt).toISOString() : undefined),
+          updated_at:        e.updated_at ?? new Date().toISOString(),
+          deleted_at:        e.deleted_at ?? iso(e.deletedAt),
+        });
         if (entry && typeof entry === 'object' && !('id' in entry)) {
           const result: Record<string, any> = {};
           for (const key of Object.keys(entry)) {
-            const e = (entry as Record<string, VaultEntry>)[key];
-            result[key] = {
-              id:                e.id,
-              vault_id:          e.vaultId,
-              encrypted_payload: e.encryptedPayload,
-              created_at:        e.createdAt ? new Date(e.createdAt).toISOString() : new Date(0).toISOString(),
-              updated_at:        new Date().toISOString(),
-              deleted_at:        iso(e.deletedAt),
-            };
+            result[key] = toRow((entry as Record<string, VaultEntry>)[key]);
           }
           return result;
         }
-        const e = entry as VaultEntry;
-        return {
-          id:                e.id,
-          vault_id:          e.vaultId,
-          encrypted_payload: e.encryptedPayload,
-          created_at:        e.createdAt ? new Date(e.createdAt).toISOString() : new Date(0).toISOString(),
-          updated_at:        new Date().toISOString(),
-          deleted_at:        iso(e.deletedAt),
-        };
+        return toRow(entry);
       },
     },
+    create: (async (input: any, { onError, retry }: any) => {
+      const res = await supabase.from('vault_entries').upsert(input).select();
+      if (res.error) { onError(new Error(res.error.message), { source: 'create', type: 'create', retry }); }
+      return res as any;
+    }) as any,
+    update: (async (input: any, { onError, retry }: any) => {
+      const res = await supabase.from('vault_entries').upsert(input).select();
+      if (res.error) { onError(new Error(res.error.message), { source: 'update', type: 'update', retry }); }
+      return res as any;
+    }) as any,
   }),
 );
 

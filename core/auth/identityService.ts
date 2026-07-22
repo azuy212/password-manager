@@ -1,8 +1,7 @@
-import { secureStorage } from '@/utils/secureStorage';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { uuidv4 } from '@/utils/uuid';
 
-import CryptoNative from 'crypto-native';
+import { cryptoProvider } from '@/core/platform/crypto';
+import { storageProvider, asyncStorageProvider } from '@/core/platform/storage';
 import { deriveMasterKey, encryptBytes, decryptBytes, generateRandomBytes, SecureKey, generateRecoveryKey, encryptVEKWithRecoveryKey, decryptVEKWithRecoveryKey } from '@/core/crypto';
 import { generateX25519KeyPair } from '@/core/crypto/x25519';
 import type { Identity } from '@/types/identity';
@@ -54,7 +53,7 @@ export async function createIdentity(
   const id = uuidv4();
 
   // Generate keypairs
-  const { privateKey, publicKey } = await CryptoNative.generateKeyPair();
+  const { privateKey, publicKey } = await cryptoProvider.generateKeyPair();
   const { privateKey: x25519PrivateKey, publicKey: x25519PublicKey } = generateX25519KeyPair();
 
   // Derive PasswordKey
@@ -86,8 +85,8 @@ export async function createIdentity(
   };
 
   // Store identity locally
-  await secureStorage.setItem(IDENTITY_KEY, JSON.stringify(identity));
-  await secureStorage.deleteItem(ATTEMPT_COUNT_KEY);
+  await storageProvider.setItem(IDENTITY_KEY, JSON.stringify(identity));
+  await storageProvider.deleteItem(ATTEMPT_COUNT_KEY);
 
   // Sign up with Supabase and create users row
   const authResult = await supabaseSignUp(
@@ -100,7 +99,7 @@ export async function createIdentity(
     encryptedVEKRecovery,
   );
   if (!authResult.success) {
-    await secureStorage.deleteItem(IDENTITY_KEY);
+    await storageProvider.deleteItem(IDENTITY_KEY);
     vek.destroy();
     passwordKey.destroy();
     return { error: authResult.error || 'Failed to create Supabase account' };
@@ -128,7 +127,7 @@ export async function bootstrapIdentityFromCloud(
   supabaseUserId: string,
   encryptedVEKPassword: string,
 ): Promise<{ identity: Identity; passwordKey: SecureKey } | { error: string }> {
-  const { privateKey } = await CryptoNative.generateKeyPair();
+  const { privateKey } = await cryptoProvider.generateKeyPair();
   const { privateKey: x25519PrivateKey, publicKey: x25519PublicKey } = generateX25519KeyPair();
 
   const { key: passwordKey } = await deriveMasterKey(password, salt);
@@ -157,8 +156,8 @@ export async function bootstrapIdentityFromCloud(
     cryptoVersion: 2,
   };
 
-  await secureStorage.setItem(IDENTITY_KEY, JSON.stringify(identity));
-  await secureStorage.deleteItem(ATTEMPT_COUNT_KEY);
+  await storageProvider.setItem(IDENTITY_KEY, JSON.stringify(identity));
+  await storageProvider.deleteItem(ATTEMPT_COUNT_KEY);
 
   vek.destroy();
 
@@ -170,13 +169,13 @@ export async function bootstrapIdentityFromCloud(
 // ────────────────────────────────────────────────────────────────────────────
 
 export async function getIdentity(): Promise<Identity | null> {
-  const stored = await secureStorage.getItem(IDENTITY_KEY);
+  const stored = await storageProvider.getItem(IDENTITY_KEY);
   if (!stored) return null;
   return JSON.parse(stored);
 }
 
 export async function hasIdentity(): Promise<boolean> {
-  const stored = await secureStorage.getItem(IDENTITY_KEY);
+  const stored = await storageProvider.getItem(IDENTITY_KEY);
   return stored !== null;
 }
 
@@ -214,7 +213,7 @@ export async function unlockIdentity(
     // Verify by decrypting Ed25519 private key
     const decrypted = await decryptBytes(identity.encryptedPrivateKey, vek);
     if (decrypted) {
-      await secureStorage.deleteItem(ATTEMPT_COUNT_KEY);
+      await storageProvider.deleteItem(ATTEMPT_COUNT_KEY);
       vek.destroy();
       return { passwordKey, encryptedVEKPassword: encryptedVEKPasswordFromCloud };
     }
@@ -308,7 +307,7 @@ export async function changePassword(
     ...identity,
     salt: newSalt,
   };
-  await secureStorage.setItem(IDENTITY_KEY, JSON.stringify(updatedIdentity));
+  await storageProvider.setItem(IDENTITY_KEY, JSON.stringify(updatedIdentity));
 
   // Update users row in cloud
   const userId = (await (await import('../../services/supabaseClient')).supabase.auth.getSession()).data.session?.user?.id;
@@ -396,7 +395,7 @@ export async function changePasswordWithRecoveryKey(
   // Update identity (new salt, same encrypted keys)
   if (identity) {
     const updatedIdentity: Identity = { ...identity, salt: newSalt };
-    await secureStorage.setItem(IDENTITY_KEY, JSON.stringify(updatedIdentity));
+    await storageProvider.setItem(IDENTITY_KEY, JSON.stringify(updatedIdentity));
   }
 
   // Update users row
@@ -439,7 +438,7 @@ export async function changePasswordWithRecoveryKey(
 export async function migrateV1ToV2(
   password: string,
 ): Promise<{ recoveryKey: string } | { error: string }> {
-  const vaultService = await import('@/core/vault/vaultService');
+  const { vaultService } = await import('@/core/vault/vaultService');
   const identity = await getIdentity();
   if (!identity) return { error: 'No identity found.' };
 
@@ -501,7 +500,7 @@ export async function migrateV1ToV2(
     encryptedX25519PrivateKey: newEncryptedX25519PrivateKey,
     cryptoVersion: 2,
   };
-  await secureStorage.setItem(IDENTITY_KEY, JSON.stringify(updatedIdentity));
+  await storageProvider.setItem(IDENTITY_KEY, JSON.stringify(updatedIdentity));
 
   // Upload to cloud
   const { data: { session } } = await (await import('../../services/supabaseClient')).supabase.auth.getSession();
@@ -595,15 +594,15 @@ export async function clearIdentity(): Promise<void> {
     errors.push(e instanceof Error ? e : new Error('Failed to sign out'));
   }
 
-  try { await secureStorage.deleteItem(IDENTITY_KEY); } catch (e) {
+  try { await storageProvider.deleteItem(IDENTITY_KEY); } catch (e) {
     errors.push(e instanceof Error ? e : new Error('Failed to clear identity'));
   }
-  try { await secureStorage.deleteItem(ATTEMPT_COUNT_KEY); } catch (e) {
+  try { await storageProvider.deleteItem(ATTEMPT_COUNT_KEY); } catch (e) {
     errors.push(e instanceof Error ? e : new Error('Failed to clear attempts'));
   }
 
   try {
-    await AsyncStorage.multiRemove([VAULTS_KEY, ENTRIES_KEY]);
+    await asyncStorageProvider.multiRemove([VAULTS_KEY, ENTRIES_KEY]);
   } catch (e) {
     errors.push(e instanceof Error ? e : new Error('Failed to clear vault data'));
   }
@@ -623,27 +622,27 @@ export async function getStoredSupabaseUserId(): Promise<string | null> {
 // ────────────────────────────────────────────────────────────────────────────
 
 async function checkLockout(): Promise<boolean> {
-  const attemptData = await secureStorage.getItem(ATTEMPT_COUNT_KEY);
+  const attemptData = await storageProvider.getItem(ATTEMPT_COUNT_KEY);
   if (!attemptData) return false;
 
   const { count, timestamp } = JSON.parse(attemptData);
   if (count >= MAX_UNLOCK_ATTEMPTS) {
     const elapsed = Date.now() - timestamp;
     if (elapsed < LOCKOUT_DURATION_MS) return true;
-    await secureStorage.deleteItem(ATTEMPT_COUNT_KEY);
+    await storageProvider.deleteItem(ATTEMPT_COUNT_KEY);
   }
 
   return false;
 }
 
 async function incrementUnlockAttempts(): Promise<void> {
-  const attemptData = await secureStorage.getItem(ATTEMPT_COUNT_KEY);
+  const attemptData = await storageProvider.getItem(ATTEMPT_COUNT_KEY);
   const now = Date.now();
 
   if (attemptData) {
     const { count, timestamp } = JSON.parse(attemptData);
-    await secureStorage.setItem(ATTEMPT_COUNT_KEY, JSON.stringify({ count: count + 1, timestamp }));
+    await storageProvider.setItem(ATTEMPT_COUNT_KEY, JSON.stringify({ count: count + 1, timestamp }));
   } else {
-    await secureStorage.setItem(ATTEMPT_COUNT_KEY, JSON.stringify({ count: 1, timestamp: now }));
+    await storageProvider.setItem(ATTEMPT_COUNT_KEY, JSON.stringify({ count: 1, timestamp: now }));
   }
 }

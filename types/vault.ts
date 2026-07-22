@@ -33,6 +33,20 @@ export interface Vault {
 }
 
 /**
+ * Raw encrypted entry as stored in the store / database.
+ * All sensitive fields are inside `encryptedPayload`.
+ */
+export interface VaultEntryRaw {
+  id: string;
+  vaultId: string;
+  encryptedPayload: string;
+  version?: number;
+  deletedAt?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/**
  * Input for creating a vault — only name is user-provided.
  * `encryptedEncryptionKey`, `version`, `deletedAt` are set internally.
  */

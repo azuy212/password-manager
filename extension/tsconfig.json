@@ -1,0 +1,21 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "..",
+    "baseUrl": "..",
+    "paths": {
+      "@/*": ["./*"]
+    },
+    "types": ["chrome"]
+  },
+  "include": [
+    "../types/**/*.ts",
+    "../core/**/*.ts",
+    "../utils/**/*.ts",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "popup/**/*.ts",
+    "popup/**/*.tsx"
+  ]
+}
