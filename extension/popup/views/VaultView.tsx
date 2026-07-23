@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { CopyIcon, ChevronLeftIcon, CheckIcon, EyeIcon, EyeOffIcon } from './Icons'
 import { sendSignOut, sendGetActiveTab } from '../messaging'
 import { destroyAll } from '../../src/platform/unlock'
 import { fetchVaults, fetchEntries, createEntry } from '../../src/repository/vaultRepository'
@@ -6,6 +7,7 @@ import { decryptVaultKey, decryptEntryPayload, encryptEntryPayload } from '../..
 import { SecureKey } from '@/core/crypto/SecureKey'
 import type { Vault as VaultRow } from '../../src/repository/vaultRepository'
 import type { DecryptedEntry } from '../../src/repository/vaultCrypto'
+import './styles.css'
 
 interface Props {
   email: string
@@ -148,67 +150,67 @@ export function VaultView({ email, userId, onSignOut, onLock }: Props) {
 
   if (loading) {
     return (
-      <div style={styles.wrapper}>
-        <div style={styles.card}>
-          <div style={styles.header}>
-            <h1 style={styles.title}>Password Manager</h1>
+      <div className="wrapper">
+        <div className="card">
+          <div className="header">
+            <h1 className="title">Password Manager</h1>
           </div>
-          <p style={styles.email}>{email}</p>
-          <p style={styles.loadingText}>Decrypting entries...</p>
+          <p className="email">{email}</p>
+          <p className="loading-text">Decrypting entries...</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div style={styles.wrapper}>
-      <div style={styles.card}>
-        <div style={styles.header}>
-          <h1 style={styles.title}>Password Manager</h1>
-          <button onClick={handleLock} style={styles.lockBtn}>Lock</button>
+    <div className="wrapper">
+      <div className="card">
+        <div className="header">
+          <h1 className="title">Password Manager</h1>
+          <button onClick={handleLock} className="lock-btn">Lock</button>
         </div>
-        <p style={styles.email}>{email}</p>
+        <p className="email">{email}</p>
 
         {page.type !== 'entry-detail' && (
-          <div style={styles.searchWrap}>
+          <div className="search-wrap">
             <input
               type="text"
               placeholder="Search entries..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              style={styles.searchInput}
+              className="search-input"
             />
           </div>
         )}
 
-        {error && <div style={styles.error}>{error}</div>}
+        {error && <div className="error">{error}</div>}
 
         {page.type === 'entries-list' && (
           <div>
-            <div style={styles.sectionRow}>
-              <h2 style={styles.sectionTitle}>Entries ({filteredEntries.length})</h2>
-              <button onClick={() => setPage({ type: 'add-entry' })} style={styles.addBtn}>+ Add</button>
+            <div className="section-row">
+              <h2 className="section-title">Entries ({filteredEntries.length})</h2>
+              <button onClick={() => setPage({ type: 'add-entry' })} className="add-btn">+ Add</button>
             </div>
             {filteredEntries.length === 0
-              ? <p style={styles.empty}>{searchQuery ? 'No matching entries' : 'No entries found'}</p>
-              : <ul style={styles.list}>
+              ? <p className="empty">{searchQuery ? 'No matching entries' : 'No entries found'}</p>
+              : <ul className="list">
                   {filteredEntries.map(entry => (
-                    <li key={entry.id} style={styles.listItem} onClick={() => handleEntryClick(entry)}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={styles.entryTitle}>{entry.title}</div>
-                        <div style={styles.entrySub}>
+                    <li key={entry.id} className="list-item" onClick={() => handleEntryClick(entry)}>
+                      <div className="entry-main">
+                        <div className="entry-title">{entry.title}</div>
+                        <div className="entry-sub">
                           {entry.username}
-                          <span style={styles.vaultTag}>{entry.vaultName}</span>
+                          <span className="vault-tag">{entry.vaultName}</span>
                         </div>
                       </div>
-                      <div style={styles.copyIconWrap} onClick={e => handleCopyMenuOpen(e, entry.id)}>
-                        <span style={styles.copyIcon}>📋</span>
+                      <div className="copy-icon-wrap" onClick={e => handleCopyMenuOpen(e, entry.id)}>
+                        <span><CopyIcon /></span>
                         {copyTarget?.entryId === entry.id && (
-                          <div style={{ ...styles.copyMenu, top: copyTarget.menuTop, left: copyTarget.menuLeft }}>
-                            <div style={styles.copyMenuItem} onClick={async (ev) => { ev.stopPropagation(); await handleCopy(entry.username, 'Username copied') }}>
+                          <div className="copy-menu" style={{ top: copyTarget.menuTop, left: copyTarget.menuLeft }}>
+                            <div className="copy-menu-item" onClick={async (ev) => { ev.stopPropagation(); await handleCopy(entry.username, 'Username copied') }}>
                               Copy Username
                             </div>
-                            <div style={styles.copyMenuItem} onClick={async (ev) => { ev.stopPropagation(); await handleCopy(entry.password, 'Password copied') }}>
+                            <div className="copy-menu-item" onClick={async (ev) => { ev.stopPropagation(); await handleCopy(entry.password, 'Password copied') }}>
                               Copy Password
                             </div>
                           </div>
@@ -218,8 +220,8 @@ export function VaultView({ email, userId, onSignOut, onLock }: Props) {
                   ))}
                 </ul>
             }
-              {copiedFeedback && <div style={styles.toast}>{copiedFeedback}</div>}
-              {copyTarget && <div style={styles.overlay} onClick={closeCopyMenu} />}
+              {copiedFeedback && <div className="toast">{copiedFeedback}</div>}
+              {copyTarget && <div className="overlay" onClick={closeCopyMenu} />}
           </div>
         )}
 
@@ -241,7 +243,6 @@ export function VaultView({ email, userId, onSignOut, onLock }: Props) {
               try {
                 const payload = await encryptEntryPayload(data, dek)
                 await createEntry(vaultId, payload)
-                // Refresh all entries
                 const vaultsData = await fetchVaults(userId)
                 const all: AllEntry[] = []
                 for (const v of vaultsData) {
@@ -267,7 +268,7 @@ export function VaultView({ email, userId, onSignOut, onLock }: Props) {
           />
         )}
 
-        <button onClick={handleSignOutAndLock} style={styles.signOut}>Sign out</button>
+        <button onClick={handleSignOutAndLock} className="sign-out">Sign out</button>
       </div>
     </div>
   )
@@ -285,42 +286,42 @@ function EntryDetail({ entry, onBack }: { entry: DecryptedEntry & { vaultName: s
 
   return (
     <div>
-      <button onClick={onBack} style={styles.backBtn}>← Back</button>
-      <h2 style={styles.sectionTitle}>{entry.title}</h2>
-      <div style={styles.vaultTagInline}>{entry.vaultName}</div>
+      <button onClick={onBack} className="back-btn"><ChevronLeftIcon className="icon-middle-right" /> Back</button>
+      <h2 className="section-title">{entry.title}</h2>
+      <div className="vault-tag-inline">{entry.vaultName}</div>
 
-      <div style={styles.field}>
-        <div style={styles.fieldLabel}>Username</div>
-        <div style={styles.fieldRow}>
-          <input type="text" readOnly value={entry.username} style={styles.fieldValue} />
-          <button onClick={() => copy(entry.username, 'Copied')} style={styles.copyBtn}>{copied === 'Copied' ? '✓' : 'Copy'}</button>
+      <div className="field">
+        <div className="field-label">Username</div>
+        <div className="field-row">
+          <input type="text" readOnly value={entry.username} className="field-value" />
+          <button onClick={() => copy(entry.username, 'Username')} className="copy-btn">{copied === 'Username' ? <CheckIcon className="icon-middle" /> : 'Copy'}</button>
         </div>
       </div>
 
-      <div style={styles.field}>
-        <div style={styles.fieldLabel}>Password</div>
-        <div style={styles.fieldRow}>
-          <div style={{ ...styles.fieldRow, flex: 1, gap: 0 }}>
-            <input type={showPassword ? 'text' : 'password'} readOnly value={entry.password} style={{ ...styles.fieldValue, borderTopRightRadius: 0, borderBottomRightRadius: 0 }} />
-            <button onClick={() => setShowPassword(p => !p)} style={{ ...styles.toggleBtn, borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }}>{showPassword ? '🙈' : '👁'}</button>
+      <div className="field">
+        <div className="field-label">Password</div>
+        <div className="field-row">
+          <div className="field-row field-row--stretch">
+            <input type={showPassword ? 'text' : 'password'} readOnly value={entry.password} className="field-value field-value--no-right-radius" />
+            <button onClick={() => setShowPassword(p => !p)} className="toggle-btn toggle-btn--no-left-radius">{showPassword ? <EyeOffIcon className="icon-middle" /> : <EyeIcon className="icon-middle" />}</button>
           </div>
-          <button onClick={() => copy(entry.password, 'Copied')} style={styles.copyBtn}>{copied === 'Copied' ? '✓' : 'Copy'}</button>
+          <button onClick={() => copy(entry.password, 'Password')} className="copy-btn">{copied === 'Password' ? <CheckIcon className="icon-middle" /> : 'Copy'}</button>
         </div>
       </div>
 
       {entry.url && (
-        <div style={styles.field}>
-          <div style={styles.fieldLabel}>URL</div>
-          <div style={styles.fieldRow}>
-            <input type="text" readOnly value={entry.url} style={styles.fieldValue} />
-            <button onClick={() => copy(entry.url, 'Copied')} style={styles.copyBtn}>{copied === 'Copied' ? '✓' : 'Copy'}</button>
+        <div className="field">
+          <div className="field-label">URL</div>
+          <div className="field-row">
+            <input type="text" readOnly value={entry.url} className="field-value" />
+            <button onClick={() => copy(entry.url, 'URL')} className="copy-btn">{copied === 'URL' ? <CheckIcon className="icon-middle" /> : 'Copy'}</button>
           </div>
         </div>
       )}
       {entry.notes && (
-        <div style={styles.field}>
-          <div style={styles.fieldLabel}>Notes</div>
-          <div style={styles.notesText}>{entry.notes}</div>
+        <div className="field">
+          <div className="field-label">Notes</div>
+          <div className="notes-text">{entry.notes}</div>
         </div>
       )}
     </div>
@@ -365,16 +366,16 @@ function AddEntryForm({ vaults, deks, onSubmit, onBack }: {
 
   return (
     <div>
-      <button onClick={onBack} style={styles.backBtn}>← Back</button>
-      <h2 style={styles.sectionTitle}>New Entry</h2>
+      <button onClick={onBack} className="back-btn"><ChevronLeftIcon className="icon-middle-right" /> Back</button>
+      <h2 className="section-title">New Entry</h2>
       {validVaults.length === 0 && (
-        <p style={styles.empty}>No vaults available. Create a vault on your mobile device first.</p>
+        <p className="empty">No vaults available. Create a vault on your mobile device first.</p>
       )}
-      <form onSubmit={handleSubmit} style={styles.form}>
+      <form onSubmit={handleSubmit} className="form">
         {validVaults.length > 1 && (
-          <label style={styles.inpBlock}>
-            <span style={styles.fieldLabel}>Vault</span>
-            <select value={vaultId} onChange={e => setVaultId(e.target.value)} style={styles.inp}>
+          <label className="inp-block">
+            <span className="field-label">Vault</span>
+            <select value={vaultId} onChange={e => setVaultId(e.target.value)} className="inp">
               {validVaults.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
             </select>
           </label>
@@ -384,7 +385,7 @@ function AddEntryForm({ vaults, deks, onSubmit, onBack }: {
         <Inp label="Password" value={password} onChange={setPassword} required type="password" />
         <Inp label="URL" value={url} onChange={setUrl} />
         <Inp label="Notes" value={notes} onChange={setNotes} multiline />
-        <button type="submit" disabled={submitting || !title || !vaultId || validVaults.length === 0} style={styles.saveBtn}>
+        <button type="submit" className="save-btn" disabled={submitting || !title || !vaultId || validVaults.length === 0}>
           {submitting ? 'Saving...' : 'Save'}
         </button>
       </form>
@@ -397,85 +398,12 @@ function Inp({ label, value, onChange, required, type, multiline }: {
   required?: boolean; type?: string; multiline?: boolean
 }) {
   return (
-    <label style={styles.inpBlock}>
-      <span style={styles.fieldLabel}>{label}</span>
+    <label className="inp-block">
+      <span className="field-label">{label}</span>
       {multiline
-        ? <textarea value={value} onChange={e => onChange(e.target.value)} style={{ ...styles.inp, minHeight: 56, resize: 'vertical' as const }} />
-        : <input type={type ?? 'text'} value={value} onChange={e => onChange(e.target.value)} required={required} style={styles.inp} />
+        ? <textarea value={value} onChange={e => onChange(e.target.value)} className="inp inp--textarea" />
+        : <input type={type ?? 'text'} value={value} onChange={e => onChange(e.target.value)} required={required} className="inp" />
       }
     </label>
   )
-}
-
-const styles: Record<string, React.CSSProperties> = {
-  wrapper: {
-    width: 360, minHeight: 300, maxHeight: 560, overflowY: 'auto',
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-    fontSize: 14, color: '#1a1a1a', background: '#f5f5f5',
-  },
-  card: { background: '#fff', borderRadius: 8, padding: 20, margin: 8, boxShadow: '0 1px 3px rgba(0,0,0,0.1)' },
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  title: { fontSize: 18, fontWeight: 600, margin: 0, color: '#2d6a4f' },
-  email: { fontSize: 12, color: '#888', margin: '0 0 12px' },
-  searchWrap: { margin: '0 0 8px' },
-  searchInput: {
-    width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #ddd',
-    fontSize: 13, outline: 'none', boxSizing: 'border-box' as const, background: '#f9f9f9',
-  },
-  sectionTitle: { fontSize: 14, fontWeight: 600, margin: '12px 0 8px', color: '#333' },
-  sectionRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-  list: { listStyle: 'none', padding: 0, margin: 0 },
-  listItem: {
-    padding: '10px 12px', borderBottom: '1px solid #eee',
-    display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', gap: 8,
-  },
-  vaultTag: {
-    display: 'inline-block', marginLeft: 6, padding: '0 5px', borderRadius: 3,
-    background: '#e8f5e9', color: '#2e7d32', fontSize: 10, fontWeight: 600,
-  },
-  vaultTagInline: {
-    display: 'inline-block', padding: '2px 6px', borderRadius: 3,
-    background: '#e8f5e9', color: '#2e7d32', fontSize: 10, fontWeight: 600, marginBottom: 12,
-  },
-  entryTitle: { fontWeight: 500, color: '#333', fontSize: 13 },
-  entrySub: { fontSize: 11, color: '#888', marginTop: 2 },
-  overlay: {
-    position: 'fixed' as const, inset: 0, zIndex: 999,
-  },
-  copyIconWrap: { position: 'relative' as const, cursor: 'pointer', padding: 4 },
-  copyIcon: { fontSize: 16, opacity: 0.6 },
-  copyMenu: {
-    position: 'fixed' as const, background: '#fff', borderRadius: 6, boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-    border: '1px solid #eee', zIndex: 1000, width: 140, overflow: 'hidden',
-  },
-  copyMenuItem: {
-    padding: '8px 12px', fontSize: 12, cursor: 'pointer', color: '#333',
-    borderBottom: '1px solid #f0f0f0',
-  },
-  toast: {
-    position: 'fixed' as const, bottom: 12, left: '50%', transform: 'translateX(-50%)',
-    background: '#333', color: '#fff', padding: '6px 14px', borderRadius: 6, fontSize: 12,
-    zIndex: 2000,
-  },
-  backBtn: { background: 'none', border: 'none', color: '#2d6a4f', fontSize: 13, fontWeight: 500, cursor: 'pointer', padding: 0, marginBottom: 8 },
-  lockBtn: { padding: '4px 12px', borderRadius: 4, border: '1px solid #ddd', background: '#fff', color: '#666', fontSize: 12, cursor: 'pointer' },
-  addBtn: { padding: '4px 10px', borderRadius: 4, border: 'none', background: '#2d6a4f', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' },
-  saveBtn: { padding: '10px 16px', borderRadius: 4, border: 'none', background: '#2d6a4f', color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer', width: '100%', marginTop: 12 },
-  signOut: { background: 'none', border: 'none', color: '#bbb', fontSize: 12, cursor: 'pointer', marginTop: 16, display: 'block', width: '100%', textAlign: 'center' },
-  empty: { color: '#999', fontSize: 13, fontStyle: 'italic', padding: '8px 0' },
-  error: { color: '#d32f2f', fontSize: 12, padding: '8px 0' },
-  loadingText: { textAlign: 'center' as const, color: '#999', padding: 20 },
-  field: { marginBottom: 12 },
-  fieldLabel: { fontSize: 11, fontWeight: 600, color: '#888', textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 2 },
-  fieldRow: { display: 'flex', gap: 4 },
-  fieldValue: {
-    flex: 1, padding: '6px 8px', borderRadius: 4, border: '1px solid #eee',
-    fontSize: 13, background: '#f9f9f9', color: '#333', fontFamily: 'monospace',
-  },
-  toggleBtn: { padding: '6px 8px', border: '1px solid #eee', background: '#fff', color: '#555', fontSize: 14, cursor: 'pointer', whiteSpace: 'nowrap' },
-  copyBtn: { padding: '6px 10px', borderRadius: 4, border: '1px solid #ddd', background: '#fff', color: '#555', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' },
-  notesText: { padding: '6px 8px', fontSize: 13, color: '#555', whiteSpace: 'pre-wrap' as const, background: '#f9f9f9', borderRadius: 4, border: '1px solid #eee' },
-  form: { display: 'flex', flexDirection: 'column', gap: 8 },
-  inpBlock: { display: 'flex', flexDirection: 'column', gap: 4 },
-  inp: { padding: '8px 10px', borderRadius: 4, border: '1px solid #ddd', fontSize: 13, outline: 'none' },
 }
