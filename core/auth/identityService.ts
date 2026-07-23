@@ -607,6 +607,14 @@ export async function clearIdentity(): Promise<void> {
     errors.push(e instanceof Error ? e : new Error('Failed to clear vault data'));
   }
 
+  // Clean up biometric keys so re-setup doesn't conflict with orphaned DUK
+  try {
+    const { disableBiometricUnlock } = await import('./biometricService');
+    await disableBiometricUnlock();
+  } catch (e) {
+    errors.push(e instanceof Error ? e : new Error('Failed to clear biometric keys'));
+  }
+
   if (errors.length > 0) {
     console.error('clearIdentity errors:', errors.map(e => e.message).join(', '));
   }

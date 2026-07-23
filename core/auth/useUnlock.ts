@@ -10,7 +10,7 @@ import {
 } from './identityService';
 import { supabaseSignIn } from './supabaseAuthService';
 import { isBiometricUnlockEnabled, unlockWithBiometrics } from './biometricService';
-import { setPasswordKey, setCachedEncryptedVEK } from '../keyStore';
+import { setPasswordKey, setCachedEncryptedVEK, setCachedVEK } from '../keyStore';
 import type { SecureKey } from '../crypto';
 
 export interface UnlockResult {
@@ -156,9 +156,10 @@ export function useUnlock(): UseUnlockReturn {
     const supabaseUserId = data.session?.user?.id;
     if (!supabaseUserId) return { error: 'No Supabase session. Please sign in with password first.' };
 
+    // Cache VEK directly for vault operations that need it
+    setCachedVEK(vek);
+
     setIsUnlocked(true);
-    // Note: PasswordKey not cached during biometric unlock (password not available)
-    // For vault operations, VEK will need to be derived from DUK again
     return { passwordKey: null as unknown as SecureKey, supabaseUserId };
   }, []);
 

@@ -2,7 +2,7 @@ import { LoadingOverlay } from '@/components/LoadingOverlay';
 import { SyncStatusIndicator } from '@/components/SyncStatusIndicator';
 import { WebLayout } from '@/components/WebLayout';
 import { changePassword, clearIdentity, regenerateRecoveryKey } from '@/core/auth/identityService';
-import { isBiometricUnlockEnabled, setupBiometricUnlock, disableBiometricUnlock } from '@/core/auth/biometricService';
+import { isBiometricUnlockEnabled, setupBiometricUnlock, disableBiometricUnlock, isBiometricsAvailable } from '@/core/auth/biometricService';
 import { getPasswordKey, getCachedEncryptedVEK, decryptVEK } from '@/core/keyStore';
 import { useTheme } from '@/hooks/useTheme';
 import { appActions, getSyncState } from '@/store/appStore';
@@ -311,6 +311,16 @@ export default function SettingsScreen() {
         ]
       );
     } else {
+      const available = await isBiometricsAvailable();
+      if (!available) {
+        Alert.alert(
+          'Not Available',
+          Platform.OS === 'android'
+            ? 'No biometric hardware found or no fingerprints enrolled. Go to Settings > Security to enroll.'
+            : 'Face ID / Touch ID is not available. Enable it in Settings first.'
+        );
+        return;
+      }
       const encryptedVEK = getCachedEncryptedVEK();
       if (!encryptedVEK) {
         Alert.alert('Error', 'Please unlock the app first');

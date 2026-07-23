@@ -3,7 +3,7 @@ import { storeProvider } from '@/core/platform/store';
 import type { StoreProvider } from '@/core/platform/interfaces';
 import type { Vault, VaultEntry, VaultEntryInput, VaultInput, VaultEntryRaw } from '@/types/vault';
 import { encryptString, decryptString, encryptBytes, decryptBytes, SecureKey, generateRandomBytes } from '../crypto';
-import { decryptVEK, getCachedEncryptedVEK, getPasswordKey } from '../keyStore';
+import { decryptVEK, getCachedVEK } from '../keyStore';
 
 /**
  * Decrypt the vault's DEK using VEK.
@@ -17,20 +17,17 @@ export async function decryptVaultKey(
 }
 
 /**
- * Derive VEK from cached PasswordKey + encryptedVEKPassword.
- * Used internally by vault operations.
+ * Derive VEK from cache.
+ * Password path: decrypt VEK from encryptedVEKPassword using PasswordKey.
+ * Biometric path: return pre-decrypted VEK from biometric unlock.
  * Caller MUST destroy the returned VEK after use.
  */
 export async function decryptVEKForOperation(): Promise<SecureKey | null> {
-  const passwordKey = getPasswordKey();
-  const encryptedVEK = getCachedEncryptedVEK();
-  if (!passwordKey || !encryptedVEK) return null;
-  try {
-    const vekBytes = await decryptBytes(encryptedVEK, passwordKey);
-    return new SecureKey(vekBytes);
-  } catch {
-    return null;
-  }
+  const fromPasswordPath = await decryptVEK();
+  if (fromPasswordPath) return fromPasswordPath;
+  const fromBiometricPath = getCachedVEK();
+  if (fromBiometricPath) return fromBiometricPath;
+  return null;
 }
 
 async function encryptEntryContent(

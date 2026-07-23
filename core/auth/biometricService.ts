@@ -1,17 +1,23 @@
-import { secureStorage } from '@/utils/secureStorage';
+import * as SecureStore from 'expo-secure-store';
+import * as LocalAuthentication from 'expo-local-authentication';
 import CryptoNative from 'crypto-native';
+import { secureStorage } from '@/utils/secureStorage';
 import { encryptBytes, decryptBytes, SecureKey } from '@/core/crypto';
 
 const DUK_KEY = 'device_unlock_key';
+const BIOMETRIC_ENABLED_KEY = 'biometric_unlock_enabled';
 const ENCRYPTED_VEK_DEVICE_KEY = 'encrypted_vek_device';
 
 /**
- * Check if biometric hardware is available on this device.
+ * Check if biometric hardware is available AND enrolled on this device.
+ * Uses expo-local-authentication which properly checks Android/iOS biometric capability.
  */
 export async function isBiometricsAvailable(): Promise<boolean> {
   try {
-    const SecureStore = require('expo-secure-store');
-    return await SecureStore.isAvailableAsync();
+    const hasHardware = await LocalAuthentication.hasHardwareAsync();
+    if (!hasHardware) return false;
+    const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+    return isEnrolled;
   } catch {
     return false;
   }
@@ -19,12 +25,13 @@ export async function isBiometricsAvailable(): Promise<boolean> {
 
 /**
  * Check if biometric unlock has been set up.
+ * Uses a plain boolean flag — no biometric prompt needed just to check.
  */
 export async function isBiometricUnlockEnabled(): Promise<boolean> {
   try {
-    const duk = await secureStorage.getItem(DUK_KEY);
+    const flag = await secureStorage.getItem(BIOMETRIC_ENABLED_KEY);
     const encrypted = await secureStorage.getItem(ENCRYPTED_VEK_DEVICE_KEY);
-    return !!duk && !!encrypted;
+    return flag === 'true' && !!encrypted;
   } catch {
     return false;
   }
@@ -37,8 +44,6 @@ export async function isBiometricUnlockEnabled(): Promise<boolean> {
  */
 export async function setupBiometricUnlock(vek: SecureKey): Promise<boolean> {
   try {
-    const SecureStore = require('expo-secure-store');
-
     // Generate DUK (256-bit random)
     const dukBytes = await CryptoNative.generateRandomBytes(32);
     const duk = new SecureKey(dukBytes);
@@ -46,14 +51,18 @@ export async function setupBiometricUnlock(vek: SecureKey): Promise<boolean> {
     // Encrypt VEK with DUK
     const encryptedVEK = await encryptBytes(vek.toArray(), duk);
 
-    // Store DUK in biometric-gated SecureStore
+    // Store DUK in biometric-gated SecureStore.
+    // On Android: encrypt + store triggers system biometric prompt.
+    // On iOS: stores with kSecAccessControlBiometryCurrentSet (prompts on read).
     await SecureStore.setItemAsync(DUK_KEY, JSON.stringify(Array.from(dukBytes)), {
       requireAuthentication: true,
-      authenticationType: SecureStore.AuthenticationType.Biometric,
     });
 
     // Store encrypted VEK in regular SecureStore (already encrypted)
     await secureStorage.setItem(ENCRYPTED_VEK_DEVICE_KEY, encryptedVEK);
+
+    // Store plain boolean flag — no biometric prompt needed to read this
+    await secureStorage.setItem(BIOMETRIC_ENABLED_KEY, 'true');
 
     duk.destroy();
     return true;
@@ -64,18 +73,16 @@ export async function setupBiometricUnlock(vek: SecureKey): Promise<boolean> {
 
 /**
  * Unlock using biometrics.
- * Prompts Face ID / Touch ID, releases DUK from Keychain, decrypts VEK.
- * Returns VEK as SecureKey (caller must destroy after use).
+ * Prompts biometric (iOS: Keychain access control, Android: Keystore auth),
+ * releases DUK, decrypts and returns VEK.
+ * Caller MUST destroy returned SecureKey after use.
  * Returns null if user cancels or biometrics fail.
  */
 export async function unlockWithBiometrics(): Promise<SecureKey | null> {
   try {
-    const SecureStore = require('expo-secure-store');
-
     // Retrieve DUK — triggers biometric prompt
     const dukJson = await SecureStore.getItemAsync(DUK_KEY, {
       requireAuthentication: true,
-      authenticationType: SecureStore.AuthenticationType.Biometric,
     });
     if (!dukJson) return null;
 
@@ -101,12 +108,12 @@ export async function unlockWithBiometrics(): Promise<SecureKey | null> {
 
 /**
  * Disable biometric unlock.
- * Deletes DUK and encrypted VEK from SecureStore.
+ * Deletes DUK, encrypted VEK, and boolean flag from storage.
  */
 export async function disableBiometricUnlock(): Promise<void> {
   try {
-    const SecureStore = require('expo-secure-store');
-    await SecureStore.deleteItemAsync(DUK_KEY).catch(() => {});
+    await SecureStore.deleteItemAsync(DUK_KEY);
   } catch {}
   await secureStorage.deleteItem(ENCRYPTED_VEK_DEVICE_KEY).catch(() => {});
+  await secureStorage.deleteItem(BIOMETRIC_ENABLED_KEY).catch(() => {});
 }

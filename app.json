@@ -26,11 +26,14 @@
     },
     "plugins": [
       "expo-router",
-      "expo-secure-store",
+      ["expo-secure-store", {
+        "faceIDPermission": "Allow $(PRODUCT_NAME) to access your Face ID."
+      }],
       "expo-font",
       "expo-splash-screen",
       "expo-status-bar",
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-local-authentication"
     ],
     "experiments": {
       "typedRoutes": true,

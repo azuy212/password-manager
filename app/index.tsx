@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useUnlock } from '../core/auth/useUnlock';
 import { getIdentity, clearIdentity, getStoredSupabaseUserId, migrateV1ToV2 } from '../core/auth/identityService';
 import { isBiometricUnlockEnabled, unlockWithBiometrics } from '../core/auth/biometricService';
+import { setCachedVEK } from '../core/keyStore';
 import { appActions, appStore$ } from '../store/appStore';
 import { useValue } from '@legendapp/state/react';
 import { useTheme } from '../hooks/useTheme';
@@ -133,6 +134,7 @@ export default function UnlockScreen() {
         Alert.alert('Error', 'Biometric unlock failed');
         return;
       }
+      setCachedVEK(result);
 
       const { supabase } = await import('../services/supabaseClient');
       const { data } = await supabase.auth.getSession();
@@ -263,7 +265,7 @@ export default function UnlockScreen() {
             disabled={isSubmitting}
           >
             <Ionicons name="finger-print" size={24} color={colors.textInverse} />
-            <Text style={styles.biometricButtonText}>Unlock with Face ID</Text>
+            <Text style={styles.biometricButtonText}>{Platform.OS === 'ios' ? 'Unlock with Face ID' : 'Unlock with Biometrics'}</Text>
           </TouchableOpacity>
         )}
 
