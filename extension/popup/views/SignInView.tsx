@@ -38,7 +38,7 @@ export function SignInView({ onSuccess }: Props) {
   return (
     <div style={styles.container}>
       <div style={styles.card}>
-        <h1 style={styles.title}>Password Manager</h1>
+        <h1 style={styles.title}>Clave</h1>
         <form onSubmit={handleSubmit} style={styles.form}>
           <label style={styles.label}>
             Email

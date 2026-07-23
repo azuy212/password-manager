@@ -1,15 +1,15 @@
 {
   "expo": {
-    "name": "password-manager",
-    "slug": "password-manager",
+    "name": "Clave",
+    "slug": "clave",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "passwordmanager",
+    "scheme": "clave",
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.ali.yasoob.passwordmanager"
+      "bundleIdentifier": "com.azuy.clave"
     },
     "android": {
       "adaptiveIcon": {
@@ -17,7 +17,11 @@
         "backgroundColor": "#ffffff"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.ali.yasoob.passwordmanager"
+      "package": "com.azuy.clave",
+      "permissions": [
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -26,9 +30,12 @@
     },
     "plugins": [
       "expo-router",
-      ["expo-secure-store", {
-        "faceIDPermission": "Allow $(PRODUCT_NAME) to access your Face ID."
-      }],
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": "Allow $(PRODUCT_NAME) to access your Face ID."
+        }
+      ],
       "expo-font",
       "expo-splash-screen",
       "expo-status-bar",
@@ -38,6 +45,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "e743f7c9-ac05-4d68-9b8b-6812d3f3b186"
+      }
     }
   }
 }

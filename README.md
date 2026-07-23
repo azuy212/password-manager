@@ -1,4 +1,4 @@
-# Password Manager - Expo + React Native
+# Clave
 
 A secure, zero-knowledge password manager built with Expo, React Native, and Supabase.
 
@@ -27,7 +27,7 @@ A secure, zero-knowledge password manager built with Expo, React Native, and Sup
 ## Architecture
 
 ```
-password-manager/
+clave/
 ├── app/                      # Expo Router screens
 │   ├── index.tsx            # Unlock screen
 │   ├── setup.tsx            # First-time setup
@@ -63,7 +63,7 @@ password-manager/
 
 1. **Clone and install dependencies**:
 ```bash
-cd password-manager
+cd clave
 npm install
 ```
 

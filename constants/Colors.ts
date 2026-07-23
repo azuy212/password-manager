@@ -1,6 +1,6 @@
 /**
  * Forest Green Theme - Dark Mode First
- * A premium, security-focused aesthetic for a password manager
+ * A premium, security-focused aesthetic for Clave
  */
 
 export type ThemeColors = {

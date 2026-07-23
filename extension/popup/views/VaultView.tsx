@@ -153,7 +153,7 @@ export function VaultView({ email, userId, onSignOut, onLock }: Props) {
       <div className="wrapper">
         <div className="card">
           <div className="header">
-            <h1 className="title">Password Manager</h1>
+            <h1 className="title">Clave</h1>
           </div>
           <p className="email">{email}</p>
           <p className="loading-text">Decrypting entries...</p>
@@ -166,7 +166,7 @@ export function VaultView({ email, userId, onSignOut, onLock }: Props) {
     <div className="wrapper">
       <div className="card">
         <div className="header">
-          <h1 className="title">Password Manager</h1>
+          <h1 className="title">Clave</h1>
           <button onClick={handleLock} className="lock-btn">Lock</button>
         </div>
         <p className="email">{email}</p>

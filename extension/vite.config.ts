@@ -4,7 +4,7 @@ import { defineConfig, loadEnv } from 'vite'
 
 const manifest = defineManifest({
   manifest_version: 3,
-  name: 'Password Manager',
+  name: 'Clave',
   version: '1.0.0',
   permissions: [
     'storage',
@@ -17,7 +17,7 @@ const manifest = defineManifest({
   ],
   action: {
     default_popup: 'extension/popup/index.html',
-    default_title: 'Password Manager',
+    default_title: 'Clave',
   },
   background: {
     service_worker: 'extension/src/background.ts',

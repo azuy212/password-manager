@@ -39,7 +39,7 @@ async function handleSupabaseUpsert(table: string, values: Record<string, unknow
 }
 
 chrome.runtime.onInstalled.addListener(() => {
-  console.log('[Password Manager] Installed')
+  console.log('[Clave] Installed')
 })
 
 async function handleSignIn(email: string, password: string): Promise<SignInResponse> {

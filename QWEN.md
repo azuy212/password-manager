@@ -1,4 +1,4 @@
-# Password Manager - Project Context
+# Clave - Project Context
 
 ## Project Overview
 
@@ -25,7 +25,7 @@ A **zero-knowledge password manager** built with **Expo SDK 54**, **React Native
 ## Project Structure
 
 ```
-password-manager/
+clave/
 ├── app/                      # Expo Router screens
 │   ├── _layout.tsx          # Root layout with navigation stack
 │   ├── index.tsx            # Unlock screen
