@@ -29,13 +29,13 @@ let _client: ReturnType<typeof createClient<Database>> | null = null
 export function getSupabase(): ReturnType<typeof createClient<Database>> {
   if (!_client) {
     const url = process.env.EXPO_PUBLIC_SUPABASE_URL || ''
-    const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
-    if (!url || !anonKey) {
+    const publishableKey = process.env.EXPO_PUBLIC_SUPABASE_KEY
+    if (!url || !publishableKey) {
       throw new Error(
-        'Supabase credentials required. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY in environment.',
+        'Supabase credentials required. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_KEY in environment.',
       )
     }
-    _client = createClient<Database>(url, anonKey, {
+    _client = createClient<Database>(url, publishableKey, {
       auth: {
         storage: sessionStorage as any,
         autoRefreshToken: true,

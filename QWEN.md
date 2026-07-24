@@ -157,7 +157,7 @@ cd android && ./gradlew clean && cd ..
 
 Defined in `.env.local` (see `.env.example`):
 - `EXPO_PUBLIC_SUPABASE_URL` - Supabase project URL
-- `EXPO_PUBLIC_SUPABASE_ANON_KEY` - Supabase anonymous key
+- `EXPO_PUBLIC_SUPABASE_KEY` - Supabase publishable key
 
 ## Development Conventions
 

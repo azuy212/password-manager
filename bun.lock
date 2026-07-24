@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "password-manager",
+      "name": "clave",
       "dependencies": {
         "@expo/vector-icons": "^15.0.3",
         "@legendapp/state": "^3.0.0-beta.46",

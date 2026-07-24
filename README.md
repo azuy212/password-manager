@@ -74,7 +74,7 @@ cp .env.example .env.local
 Edit `.env.local` and add your Supabase credentials:
 ```
 EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+EXPO_PUBLIC_SUPABASE_KEY=your-supabase-publishable-key
 ```
 
 3. **Set up Supabase** (optional for local-only use):
@@ -180,7 +180,7 @@ npm run lint
 
 ## Important Notes
 
-⚠️ **Password Recovery**: There is NO password recovery. If you forget your master password, all data is permanently inaccessible.
+⚠️ **Password Recovery**: Password recovery is only possible through recovery key shown exactly once when you create account.
 
 ⚠️ **Native Build**: The crypto module requires a native build. You must run `npx expo prebuild` and use a dev client.
 
@@ -188,7 +188,7 @@ npm run lint
 
 ## Roadmap
 
-- [ ] Biometric unlock (Face ID / Touch ID)
+- [x] Biometric unlock (Face ID / Touch ID)
 - [ ] Password generator
 - [ ] Import/export functionality
 - [ ] TOTP/2FA support
